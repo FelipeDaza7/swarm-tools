@@ -20,7 +20,7 @@ Break complex tasks into parallel subtasks, spawn agents to work on them, and co
 ```bash
 # 1. Install required dependencies
 brew install sst/tap/opencode
-go install github.com/steveyegge/beads/cmd/bd@latest
+curl -fsSL https://raw.githubusercontent.com/steveyegge/beads/main/scripts/install.sh | bash
 
 # 2. Install the plugin globally
 npm install -g opencode-swarm-plugin
@@ -153,15 +153,15 @@ bd init
 
 ## Dependencies
 
-| Dependency                                                      | Purpose                               | Install                                                            | Required |
-| --------------------------------------------------------------- | ------------------------------------- | ------------------------------------------------------------------ | -------- |
-| [OpenCode](https://opencode.ai)                                 | Plugin host                           | `brew install sst/tap/opencode`                                    | Yes      |
-| [Beads](https://github.com/steveyegge/beads)                    | Git-backed issue tracking             | `go install github.com/steveyegge/beads/cmd/bd@latest`             | Yes      |
-| [Agent Mail](https://github.com/joelhooks/agent-mail)           | Multi-agent coordination              | `go install github.com/joelhooks/agent-mail/cmd/agent-mail@latest` | No\*     |
-| [CASS](https://github.com/Dicklesworthstone/cass)               | Historical context from past sessions | See repo                                                           | No\*     |
-| [UBS](https://github.com/joelhooks/ubs)                         | Pre-completion bug scanning           | See repo                                                           | No\*     |
-| [semantic-memory](https://github.com/joelhooks/semantic-memory) | Learning persistence                  | `npm install -g semantic-memory`                                   | No\*     |
-| [Redis](https://redis.io)                                       | Rate limiting                         | `brew install redis`                                               | No\*     |
+| Dependency                                                      | Purpose                               | Install                                                                                         | Required |
+| --------------------------------------------------------------- | ------------------------------------- | ----------------------------------------------------------------------------------------------- | -------- |
+| [OpenCode](https://opencode.ai)                                 | Plugin host                           | `brew install sst/tap/opencode`                                                                 | Yes      |
+| [Beads](https://github.com/steveyegge/beads)                    | Git-backed issue tracking             | `curl -fsSL https://raw.githubusercontent.com/steveyegge/beads/main/scripts/install.sh \| bash` | Yes      |
+| [Agent Mail](https://github.com/joelhooks/agent-mail)           | Multi-agent coordination              | `go install github.com/joelhooks/agent-mail/cmd/agent-mail@latest`                              | No\*     |
+| [CASS](https://github.com/Dicklesworthstone/cass)               | Historical context from past sessions | See repo                                                                                        | No\*     |
+| [UBS](https://github.com/joelhooks/ubs)                         | Pre-completion bug scanning           | See repo                                                                                        | No\*     |
+| [semantic-memory](https://github.com/joelhooks/semantic-memory) | Learning persistence                  | `npm install -g semantic-memory`                                                                | No\*     |
+| [Redis](https://redis.io)                                       | Rate limiting                         | `brew install redis`                                                                            | No\*     |
 
 \*The plugin gracefully degrades without optional dependencies.
 

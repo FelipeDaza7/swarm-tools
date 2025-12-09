@@ -43,7 +43,8 @@ const DEPENDENCIES: Dependency[] = [
     command: "bd",
     checkArgs: ["--version"],
     required: true,
-    install: "go install github.com/steveyegge/beads/cmd/bd@latest",
+    install:
+      "curl -fsSL https://raw.githubusercontent.com/steveyegge/beads/main/scripts/install.sh | bash",
   },
   {
     name: "Agent Mail",
