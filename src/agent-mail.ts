@@ -704,6 +704,7 @@ export async function mcpCall<T>(
   args: Record<string, unknown>,
 ): Promise<T> {
   let lastError: Error | null = null;
+  let restartAttempted = false;
 
   for (let attempt = 0; attempt <= RETRY_CONFIG.maxRetries; attempt++) {
     // Apply backoff delay (except first attempt)
@@ -723,17 +724,39 @@ export async function mcpCall<T>(
       return result;
     } catch (error) {
       lastError = error instanceof Error ? error : new Error(String(error));
+      const errorMessage = lastError.message.toLowerCase();
 
       // Track consecutive failures
       consecutiveFailures++;
 
-      // Check if error is retryable FIRST
+      // Check if error is retryable
       const retryable = isRetryableError(error);
 
-      // Check if we should attempt server restart
+      // AGGRESSIVE: If it's an "unexpected error", restart immediately (once per call)
+      const isUnexpectedError = errorMessage.includes("unexpected error");
+      if (isUnexpectedError && !restartAttempted && RECOVERY_CONFIG.enabled) {
+        console.warn(
+          `[agent-mail] "${toolName}" got unexpected error, restarting server immediately...`,
+        );
+        restartAttempted = true;
+        const restarted = await restartServer();
+        if (restarted) {
+          agentMailAvailable = null;
+          consecutiveFailures = 0;
+          // Small delay to let server stabilize
+          await new Promise((resolve) => setTimeout(resolve, 1000));
+          // Don't count this attempt - retry immediately
+          attempt--;
+          continue;
+        }
+      }
+
+      // Standard retry logic for other retryable errors
       if (
+        !isUnexpectedError &&
         consecutiveFailures >= RECOVERY_CONFIG.failureThreshold &&
-        RECOVERY_CONFIG.enabled
+        RECOVERY_CONFIG.enabled &&
+        !restartAttempted
       ) {
         console.warn(
           `[agent-mail] ${consecutiveFailures} consecutive failures, checking server health...`,
@@ -742,13 +765,11 @@ export async function mcpCall<T>(
         const healthy = await isServerFunctional();
         if (!healthy) {
           console.warn("[agent-mail] Server unhealthy, attempting restart...");
+          restartAttempted = true;
           const restarted = await restartServer();
           if (restarted) {
-            // Reset availability cache since server restarted
             agentMailAvailable = null;
-            // Only retry if the error was retryable in the first place
             if (retryable) {
-              // Don't count this attempt against retries - try again
               attempt--;
               continue;
             }
