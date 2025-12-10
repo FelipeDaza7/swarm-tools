@@ -226,14 +226,15 @@ export * from "./beads";
  * - AgentMailError, FileReservationConflictError - Error classes
  * - AgentMailState - Session state type
  *
- * NOTE: We selectively export to avoid exporting constants like AGENT_MAIL_URL
- * which would confuse the plugin loader (it tries to call all exports as functions)
+ * NOTE: For OpenCode plugin usage, import from "opencode-swarm-plugin/plugin" instead
+ * to avoid the plugin loader trying to call these classes as functions.
  */
 export {
   agentMailTools,
   AgentMailError,
   AgentMailNotInitializedError,
   FileReservationConflictError,
+  createAgentMailError,
   type AgentMailState,
 } from "./agent-mail";
 

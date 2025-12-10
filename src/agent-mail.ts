@@ -231,22 +231,46 @@ interface ThreadSummary {
 // Errors
 // ============================================================================
 
+/**
+ * AgentMailError - Custom error for Agent Mail operations
+ *
+ * Note: Using a factory pattern to avoid "Cannot call a class constructor without |new|"
+ * errors in some bundled environments (OpenCode's plugin runtime).
+ */
 export class AgentMailError extends Error {
-  constructor(
-    message: string,
-    public readonly tool: string,
-    public readonly code?: number,
-    public readonly data?: unknown,
-  ) {
+  public readonly tool: string;
+  public readonly code?: number;
+  public readonly data?: unknown;
+
+  constructor(message: string, tool: string, code?: number, data?: unknown) {
     super(message);
+    this.tool = tool;
+    this.code = code;
+    this.data = data;
     this.name = "AgentMailError";
+    // Fix prototype chain for instanceof checks
+    Object.setPrototypeOf(this, AgentMailError.prototype);
   }
+}
+
+/**
+ * Factory function to create AgentMailError
+ * Use this instead of `new AgentMailError()` for compatibility
+ */
+export function createAgentMailError(
+  message: string,
+  tool: string,
+  code?: number,
+  data?: unknown,
+): AgentMailError {
+  return new AgentMailError(message, tool, code, data);
 }
 
 export class AgentMailNotInitializedError extends Error {
   constructor() {
     super("Agent Mail not initialized. Call agent-mail:init first.");
     this.name = "AgentMailNotInitializedError";
+    Object.setPrototypeOf(this, AgentMailNotInitializedError.prototype);
   }
 }
 
