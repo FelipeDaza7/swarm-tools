@@ -159,6 +159,11 @@ function buildCreateCommand(args: BeadCreateArgs): string[] {
     parts.push("--parent", args.parent_id);
   }
 
+  // Custom ID for human-readable bead names (e.g., 'phase-0', 'phase-1.e2e-test')
+  if (args.id) {
+    parts.push("--id", args.id);
+  }
+
   parts.push("--json");
   return parts;
 }
@@ -288,12 +293,22 @@ export const beads_create_epic = tool({
       .string()
       .optional()
       .describe("Epic description"),
+    epic_id: tool.schema
+      .string()
+      .optional()
+      .describe("Custom ID for the epic (e.g., 'phase-0')"),
     subtasks: tool.schema
       .array(
         tool.schema.object({
           title: tool.schema.string(),
           priority: tool.schema.number().min(0).max(3).optional(),
           files: tool.schema.array(tool.schema.string()).optional(),
+          id_suffix: tool.schema
+            .string()
+            .optional()
+            .describe(
+              "Custom ID suffix (e.g., 'e2e-test' becomes 'phase-0.e2e-test')",
+            ),
         }),
       )
       .describe("Subtasks to create under the epic"),
@@ -309,6 +324,7 @@ export const beads_create_epic = tool({
         type: "epic",
         priority: 1,
         description: validated.epic_description,
+        id: validated.epic_id,
       });
 
       const epicResult = await runBdCommand(epicCmd.slice(1)); // Remove 'bd' prefix
@@ -326,11 +342,19 @@ export const beads_create_epic = tool({
 
       // 2. Create subtasks
       for (const subtask of validated.subtasks) {
+        // Build subtask ID: if epic has custom ID and subtask has suffix, combine them
+        // e.g., epic_id='phase-0', id_suffix='e2e-test' → 'phase-0.e2e-test'
+        let subtaskId: string | undefined;
+        if (validated.epic_id && subtask.id_suffix) {
+          subtaskId = `${validated.epic_id}.${subtask.id_suffix}`;
+        }
+
         const subtaskCmd = buildCreateCommand({
           title: subtask.title,
           type: "task",
           priority: subtask.priority ?? 2,
           parent_id: epic.id,
+          id: subtaskId,
         });
 
         const subtaskResult = await runBdCommand(subtaskCmd.slice(1)); // Remove 'bd' prefix

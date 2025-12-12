@@ -38,11 +38,13 @@ export type BeadDependency = z.infer<typeof BeadDependencySchema>;
  * ID format:
  * - Standard: `{project}-{hash}` (e.g., `opencode-swarm-plugin-1i8`)
  * - Subtask: `{project}-{hash}.{index}` (e.g., `opencode-swarm-plugin-1i8.1`)
+ * - Custom: `{project}-{custom-id}` (e.g., `migrate-egghead-phase-0`)
+ * - Custom subtask: `{project}-{custom-id}.{suffix}` (e.g., `migrate-egghead-phase-0.e2e-test`)
  */
 export const BeadSchema = z.object({
   id: z
     .string()
-    .regex(/^[a-z0-9]+(-[a-z0-9]+)+(\.\d+)?$/, "Invalid bead ID format"),
+    .regex(/^[a-z0-9]+(-[a-z0-9]+)+(\.[\w-]+)?$/, "Invalid bead ID format"),
   title: z.string().min(1, "Title required"),
   description: z.string().optional().default(""),
   status: BeadStatusSchema.default("open"),
@@ -64,6 +66,12 @@ export const BeadCreateArgsSchema = z.object({
   priority: z.number().int().min(0).max(3).default(2),
   description: z.string().optional(),
   parent_id: z.string().optional(),
+  /**
+   * Custom ID for human-readable bead names.
+   * MUST include project prefix (e.g., 'migrate-egghead-phase-0', not just 'phase-0').
+   * For subtasks, use dot notation: 'migrate-egghead-phase-0.e2e-test'
+   */
+  id: z.string().optional(),
 });
 export type BeadCreateArgs = z.infer<typeof BeadCreateArgsSchema>;
 
@@ -125,12 +133,24 @@ export type BeadTree = z.infer<typeof BeadTreeSchema>;
 export const EpicCreateArgsSchema = z.object({
   epic_title: z.string().min(1),
   epic_description: z.string().optional(),
+  /**
+   * Custom ID for the epic. MUST include project prefix.
+   * Example: 'migrate-egghead-phase-0' (not just 'phase-0')
+   * If not provided, bd generates a random ID.
+   */
+  epic_id: z.string().optional(),
   subtasks: z
     .array(
       z.object({
         title: z.string().min(1),
         priority: z.number().int().min(0).max(3).default(2),
         files: z.array(z.string()).optional().default([]),
+        /**
+         * Custom ID suffix for subtask. Combined with epic_id using dot notation.
+         * Example: epic_id='migrate-egghead-phase-0', id_suffix='e2e-test'
+         *          → subtask ID: 'migrate-egghead-phase-0.e2e-test'
+         */
+        id_suffix: z.string().optional(),
       }),
     )
     .min(1),
