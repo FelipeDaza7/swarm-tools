@@ -27,6 +27,49 @@ Swarm Mail is embedded (no external server needed) and provides:
 
 ## Workflow
 
+### 0. Task Clarity Check (BEFORE ANYTHING ELSE)
+
+**Before decomposing, ask yourself: Is this task clear enough to parallelize?**
+
+**Vague Task Signals:**
+
+- No specific files or components mentioned
+- Vague verbs: "improve", "fix", "update", "make better"
+- Large scope without constraints: "refactor the codebase"
+- Missing success criteria: "add auth" (what kind? OAuth? JWT? Session?)
+- Ambiguous boundaries: "handle errors" (which errors? where?)
+
+**If task is vague, ASK QUESTIONS FIRST:**
+
+```
+The task "<task>" needs clarification before I can decompose it effectively.
+
+1. [Specific question about scope/files/approach]
+
+Options:
+a) [Option A with trade-off]
+b) [Option B with trade-off]
+c) [Option C with trade-off]
+
+Which approach, or should I explore something else?
+```
+
+**Rules for clarifying questions:**
+
+- ONE question at a time (don't overwhelm)
+- Offer 2-3 concrete options when possible
+- Lead with your recommendation and why
+- Wait for answer before next question
+
+**Clear Task Signals (proceed to decompose):**
+
+- Specific files or directories mentioned
+- Concrete action verbs: "add X to Y", "migrate A to B", "extract C from D"
+- Defined scope: "the auth module", "API routes in /api/v2"
+- Measurable outcome: "tests pass", "type errors fixed", "endpoint returns X"
+
+**When in doubt, ask.** A 30-second clarification beats a 30-minute wrong decomposition.
+
 ### 1. Initialize Swarm Mail (FIRST)
 
 ```bash

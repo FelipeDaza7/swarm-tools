@@ -38,6 +38,7 @@ import { structuredTools } from "./structured";
 import { swarmTools } from "./swarm";
 import { repoCrawlTools } from "./repo-crawl";
 import { skillsTools, setSkillsProjectDirectory } from "./skills";
+import { mandateTools } from "./mandates";
 
 /**
  * OpenCode Swarm Plugin
@@ -50,6 +51,7 @@ import { skillsTools, setSkillsProjectDirectory } from "./skills";
  * - swarm:* - Swarm orchestration and task decomposition
  * - repo-crawl:* - GitHub API tools for repository research
  * - skills:* - Agent skills discovery, activation, and execution
+ * - mandate:* - Agent voting system for collaborative knowledge curation
  *
  * @param input - Plugin context from OpenCode
  * @returns Plugin hooks including tools, events, and tool execution hooks
@@ -132,6 +134,7 @@ export const SwarmPlugin: Plugin = async (
      * - agent-mail:init, agent-mail:send, agent-mail:reserve, etc. (legacy MCP)
      * - swarm-mail:init, swarm-mail:send, swarm-mail:reserve, etc. (embedded)
      * - repo-crawl:readme, repo-crawl:structure, etc.
+     * - mandate:file, mandate:vote, mandate:query, etc.
      */
     tool: {
       ...beadsTools,
@@ -140,6 +143,7 @@ export const SwarmPlugin: Plugin = async (
       ...swarmTools,
       ...repoCrawlTools,
       ...skillsTools,
+      ...mandateTools,
     },
 
     /**
@@ -361,6 +365,7 @@ export const allTools = {
   ...swarmTools,
   ...repoCrawlTools,
   ...skillsTools,
+  ...mandateTools,
 } as const;
 
 /**
@@ -473,3 +478,76 @@ export {
   type SkillMetadata,
   type SkillRef,
 } from "./skills";
+
+/**
+ * Re-export mandates module
+ *
+ * Agent voting system for collaborative knowledge curation.
+ *
+ * Includes:
+ * - mandateTools - All mandate tools (file, vote, query, list, stats)
+ * - MandateError - Error class
+ *
+ * Features:
+ * - Submit ideas, tips, lore, snippets, and feature requests
+ * - Vote on entries (upvote/downvote) with 90-day decay
+ * - Semantic search for relevant mandates
+ * - Status transitions based on consensus (candidate → established → mandate)
+ * - Persistent storage with semantic-memory
+ *
+ * Types:
+ * - MandateEntry, Vote, MandateScore - Core data types
+ * - MandateStatus, MandateContentType - Enum types
+ */
+export { mandateTools, MandateError } from "./mandates";
+
+/**
+ * Re-export mandate-storage module
+ *
+ * Includes:
+ * - createMandateStorage - Factory function
+ * - getMandateStorage, setMandateStorage, resetMandateStorage - Global instance management
+ * - updateMandateStatus, updateAllMandateStatuses - Status update helpers
+ * - InMemoryMandateStorage, SemanticMemoryMandateStorage - Storage implementations
+ *
+ * Types:
+ * - MandateStorage - Unified storage interface
+ * - MandateStorageConfig, MandateStorageBackend, MandateStorageCollections - Configuration types
+ */
+export {
+  createMandateStorage,
+  getMandateStorage,
+  setMandateStorage,
+  resetMandateStorage,
+  updateMandateStatus,
+  updateAllMandateStatuses,
+  InMemoryMandateStorage,
+  SemanticMemoryMandateStorage,
+  DEFAULT_MANDATE_STORAGE_CONFIG,
+  type MandateStorage,
+  type MandateStorageConfig,
+  type MandateStorageBackend,
+  type MandateStorageCollections,
+} from "./mandate-storage";
+
+/**
+ * Re-export mandate-promotion module
+ *
+ * Includes:
+ * - evaluatePromotion - Evaluate status transitions
+ * - shouldPromote - Determine new status based on score
+ * - formatPromotionResult - Format promotion result for display
+ * - evaluateBatchPromotions, getStatusChanges, groupByTransition - Batch helpers
+ *
+ * Types:
+ * - PromotionResult - Promotion evaluation result
+ */
+export {
+  evaluatePromotion,
+  shouldPromote,
+  formatPromotionResult,
+  evaluateBatchPromotions,
+  getStatusChanges,
+  groupByTransition,
+  type PromotionResult,
+} from "./mandate-promotion";

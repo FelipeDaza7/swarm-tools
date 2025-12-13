@@ -63,6 +63,53 @@ Swarm Mail is embedded (no external server needed) and provides:
 
 **Heuristic:** If you can describe the task in one sentence without "and", don't swarm.
 
+## Task Clarity Check (BEFORE Decomposing)
+
+**Before decomposing, ask: Is this task clear enough to parallelize?**
+
+### Vague Task Signals (ASK QUESTIONS FIRST)
+
+| Signal                   | Example                        | Problem                          |
+| ------------------------ | ------------------------------ | -------------------------------- |
+| No files mentioned       | "improve performance"          | Where? Which files?              |
+| Vague verbs              | "fix", "update", "make better" | What specifically?               |
+| Large undefined scope    | "refactor the codebase"        | Which parts? What pattern?       |
+| Missing success criteria | "add auth"                     | OAuth? JWT? Session? What flows? |
+| Ambiguous boundaries     | "handle errors"                | Which errors? Where? How?        |
+
+### How to Clarify
+
+```markdown
+The task "<task>" needs clarification before I can decompose it.
+
+**Question:** [Specific question about scope/files/approach]
+
+Options:
+a) [Option A] - [trade-off]
+b) [Option B] - [trade-off]
+c) [Option C] - [trade-off]
+
+I'd recommend (a) because [reason]. Which approach?
+```
+
+**Rules:**
+
+- ONE question at a time (don't overwhelm)
+- Offer 2-3 concrete options when possible
+- Lead with your recommendation and why
+- Wait for answer before asking next question
+
+### Clear Task Signals (PROCEED to decompose)
+
+| Signal             | Example                        | Why it's clear   |
+| ------------------ | ------------------------------ | ---------------- |
+| Specific files     | "update src/auth/\*.ts"        | Scope defined    |
+| Concrete verbs     | "migrate from X to Y"          | Action defined   |
+| Defined scope      | "the payment module"           | Boundaries clear |
+| Measurable outcome | "tests pass", "no type errors" | Success criteria |
+
+**When in doubt, ask.** A 30-second clarification beats a 30-minute wrong decomposition.
+
 ## Coordinator Workflow
 
 ### Phase 1: Initialize Swarm Mail (FIRST)
@@ -309,16 +356,17 @@ One blocker affects multiple subtasks.
 
 ## Anti-Patterns
 
-| Anti-Pattern             | Symptom                                    | Fix                                  |
-| ------------------------ | ------------------------------------------ | ------------------------------------ |
-| **Mega-Coordinator**     | Coordinator editing files                  | Coordinator only orchestrates        |
-| **Silent Swarm**         | No communication, late conflicts           | Require updates, check inbox         |
-| **Over-Decomposed**      | 10 subtasks for 20 lines                   | 2-5 subtasks max                     |
-| **Under-Specified**      | "Implement backend"                        | Clear goal, files, criteria          |
-| **Inline Planning** ⚠️   | Context pollution, exhaustion on long runs | Delegate planning to subagent        |
-| **Heavy File Reading**   | Coordinator reading 10+ files              | Subagent reads, returns summary only |
-| **Deep CASS Drilling**   | Multiple cass_search calls inline          | Subagent searches, summarizes        |
-| **Manual Decomposition** | Hand-crafting subtasks without validation  | Use swarm_plan_prompt + validation   |
+| Anti-Pattern                | Symptom                                    | Fix                                  |
+| --------------------------- | ------------------------------------------ | ------------------------------------ |
+| **Decomposing Vague Tasks** | Wrong subtasks, wasted agent cycles        | Ask clarifying questions FIRST       |
+| **Mega-Coordinator**        | Coordinator editing files                  | Coordinator only orchestrates        |
+| **Silent Swarm**            | No communication, late conflicts           | Require updates, check inbox         |
+| **Over-Decomposed**         | 10 subtasks for 20 lines                   | 2-5 subtasks max                     |
+| **Under-Specified**         | "Implement backend"                        | Clear goal, files, criteria          |
+| **Inline Planning** ⚠️      | Context pollution, exhaustion on long runs | Delegate planning to subagent        |
+| **Heavy File Reading**      | Coordinator reading 10+ files              | Subagent reads, returns summary only |
+| **Deep CASS Drilling**      | Multiple cass_search calls inline          | Subagent searches, summarizes        |
+| **Manual Decomposition**    | Hand-crafting subtasks without validation  | Use swarm_plan_prompt + validation   |
 
 ## Shared Context Template
 
