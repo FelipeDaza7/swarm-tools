@@ -23,20 +23,45 @@ $ARGUMENTS
 agentmail_init(project_path="$PWD", task_description="Swarm: <task summary>")
 ```
 
-### 2. Create Feature Branch (unless --to-main)
+### 2. Knowledge Gathering (MANDATORY)
+
+**Before decomposing, query ALL knowledge sources:**
+
+```
+# Past learnings from this project
+semantic-memory_find(query="<task keywords>", limit=5)
+
+# How similar tasks were solved before
+cass_search(query="<task description>", limit=5)
+
+# Design patterns and prior art
+pdf-brain_search(query="<domain concepts>", limit=5)
+
+# Available skills to inject into workers
+skills_list()
+```
+
+Synthesize findings into shared context for workers. Note:
+
+- Relevant patterns from pdf-brain
+- Similar past approaches from CASS
+- Project-specific learnings from semantic-memory
+- Skills to recommend for subtasks
+
+### 3. Create Feature Branch (unless --to-main)
 
 ```bash
 git checkout -b swarm/<short-task-name>
 git push -u origin HEAD
 ```
 
-### 3. Decompose Task
+### 4. Decompose Task
 
 Use strategy selection and planning:
 
 ```
 swarm_select_strategy(task="<the task>")
-swarm_plan_prompt(task="<the task>", strategy="<auto or selected>")
+swarm_plan_prompt(task="<the task>", strategy="<auto or selected>", context="<synthesized knowledge>")
 ```
 
 Follow the prompt to create a BeadTree, then validate:
@@ -45,7 +70,7 @@ Follow the prompt to create a BeadTree, then validate:
 swarm_validate_decomposition(response="<your BeadTree JSON>")
 ```
 
-### 4. Create Beads
+### 5. Create Beads
 
 ```
 beads_create_epic(epic_title="<task>", subtasks=[{title, files, priority}...])
@@ -56,8 +81,9 @@ Rules:
 - Each bead completable by one agent
 - Independent where possible (parallelizable)
 - 3-7 beads per swarm
+- No file overlap between subtasks
 
-### 5. Reserve Files
+### 6. Reserve Files
 
 ```
 agentmail_reserve(paths=[<files>], reason="<bead-id>: <description>")
@@ -65,28 +91,41 @@ agentmail_reserve(paths=[<files>], reason="<bead-id>: <description>")
 
 No two agents should edit the same file.
 
-### 6. Spawn Agents
+### 7. Spawn Agents
 
 **CRITICAL: Spawn ALL in a SINGLE message with multiple Task calls.**
 
 For each subtask:
 
 ```
-swarm_spawn_subtask(bead_id="<id>", epic_id="<epic>", subtask_title="<title>", files=[...])
+swarm_spawn_subtask(
+  bead_id="<id>",
+  epic_id="<epic>",
+  subtask_title="<title>",
+  files=[...],
+  shared_context="<synthesized knowledge from step 2>"
+)
 ```
 
 Then spawn:
 
 ```
-Task(subagent_type="swarm-worker", description="<bead-title>", prompt="<from swarm_spawn_subtask>")
+Task(subagent_type="swarm/worker", description="<bead-title>", prompt="<from swarm_spawn_subtask>")
 ```
 
-### 7. Monitor (unless --no-sync)
+### 8. Monitor (unless --no-sync)
 
 ```
-swarm_status(epic_id="<epic-id>")
+swarm_status(epic_id="<epic-id>", project_key="$PWD")
 agentmail_inbox()
 ```
+
+**Intervention triggers:**
+
+- Worker blocked >5 min → Check inbox, offer guidance
+- File conflict → Mediate, reassign files
+- Worker asking questions → Answer directly
+- Scope creep → Redirect, create new bead for extras
 
 If incompatibilities spotted, broadcast:
 
@@ -94,14 +133,14 @@ If incompatibilities spotted, broadcast:
 agentmail_send(to=["*"], subject="Coordinator Update", body="<guidance>", importance="high")
 ```
 
-### 8. Complete
+### 9. Complete
 
 ```
 swarm_complete(project_key="$PWD", agent_name="<your-name>", bead_id="<epic-id>", summary="<done>", files_touched=[...])
 beads_sync()
 ```
 
-### 9. Create PR (unless --to-main)
+### 10. Create PR (unless --to-main)
 
 ```bash
 gh pr create --title "feat: <epic title>" --body "## Summary\n<bullets>\n\n## Beads\n<list>"
@@ -109,10 +148,22 @@ gh pr create --title "feat: <epic title>" --body "## Summary\n<bullets>\n\n## Be
 
 ## Strategy Reference
 
-| Strategy      | Best For                | Keywords                              |
-| ------------- | ----------------------- | ------------------------------------- |
-| file-based    | Refactoring, migrations | refactor, migrate, rename, update all |
-| feature-based | New features            | add, implement, build, create, new    |
-| risk-based    | Bug fixes, security     | fix, bug, security, critical, urgent  |
+| Strategy       | Best For                 | Keywords                              |
+| -------------- | ------------------------ | ------------------------------------- |
+| file-based     | Refactoring, migrations  | refactor, migrate, rename, update all |
+| feature-based  | New features             | add, implement, build, create, new    |
+| risk-based     | Bug fixes, security      | fix, bug, security, critical, urgent  |
+| research-based | Investigation, discovery | research, investigate, explore, learn |
 
-Begin decomposition now.
+## Quick Checklist
+
+- [ ] Knowledge gathered (semantic-memory, CASS, pdf-brain, skills)
+- [ ] Strategy selected
+- [ ] BeadTree validated (no file conflicts)
+- [ ] Epic + subtasks created
+- [ ] Files reserved
+- [ ] Workers spawned in parallel
+- [ ] Progress monitored
+- [ ] PR created (or pushed to main)
+
+Begin with knowledge gathering now.
