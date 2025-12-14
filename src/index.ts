@@ -39,6 +39,11 @@ import { swarmTools } from "./swarm";
 import { repoCrawlTools } from "./repo-crawl";
 import { skillsTools, setSkillsProjectDirectory } from "./skills";
 import { mandateTools } from "./mandates";
+import {
+  guardrailOutput,
+  DEFAULT_GUARDRAIL_CONFIG,
+  type GuardrailResult,
+} from "./output-guardrails";
 
 /**
  * OpenCode Swarm Plugin
@@ -160,13 +165,26 @@ export const SwarmPlugin: Plugin = async (
     },
 
     /**
-     * Hook after tool execution for automatic cleanup
+     * Hook after tool execution for automatic cleanup and guardrails
      *
-     * Auto-releases file reservations after swarm:complete or beads:close
-     * to prevent stale locks when tasks finish.
+     * - Applies output guardrails to prevent context blowout from MCP tools
+     * - Auto-releases file reservations after swarm:complete or beads:close
+     * - Auto-syncs beads after closing
      */
     "tool.execute.after": async (input, output) => {
       const toolName = input.tool;
+
+      // Apply output guardrails to prevent context blowout
+      // Skip if output is empty or tool is in skip list
+      if (output.output && typeof output.output === "string") {
+        const guardrailResult = guardrailOutput(toolName, output.output);
+        if (guardrailResult.truncated) {
+          output.output = guardrailResult.output;
+          console.log(
+            `[swarm-plugin] Guardrail truncated ${toolName}: ${guardrailResult.originalLength} → ${guardrailResult.truncatedLength} chars`,
+          );
+        }
+      }
 
       // Track Agent Mail state for cleanup
       if (toolName === "agentmail_init" && output.output) {
@@ -559,3 +577,27 @@ export {
   groupByTransition,
   type PromotionResult,
 } from "./mandate-promotion";
+
+/**
+ * Re-export output-guardrails module
+ *
+ * Includes:
+ * - guardrailOutput - Main entry point for truncating tool output
+ * - truncateWithBoundaries - Smart truncation preserving structure
+ * - getToolLimit - Get character limit for a tool
+ * - DEFAULT_GUARDRAIL_CONFIG - Default configuration
+ *
+ * Types:
+ * - GuardrailConfig - Configuration interface
+ * - GuardrailResult - Result of guardrail processing
+ * - GuardrailMetrics - Analytics data
+ */
+export {
+  guardrailOutput,
+  truncateWithBoundaries,
+  createMetrics,
+  DEFAULT_GUARDRAIL_CONFIG,
+  type GuardrailConfig,
+  type GuardrailResult,
+  type GuardrailMetrics,
+} from "./output-guardrails";
