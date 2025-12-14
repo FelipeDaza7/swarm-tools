@@ -35,12 +35,15 @@ import { homedir } from "node:os";
 // SQLite is optional - only available in Bun runtime
 // We use dynamic import to avoid breaking Node.js environments
 interface BunDatabase {
-  run(sql: string, params?: unknown[]): void;
+  run(
+    sql: string,
+    params?: unknown[],
+  ): { changes: number; lastInsertRowid: number };
   query<T>(sql: string): {
     get(...params: unknown[]): T | null;
   };
   prepare(sql: string): {
-    run(...params: unknown[]): void;
+    run(...params: unknown[]): { changes: number; lastInsertRowid: number };
   };
   close(): void;
 }
@@ -453,6 +456,47 @@ export class SqliteRateLimiter implements RateLimiter {
     return { allowed, remaining, resetAt };
   }
 
+  /**
+   * Clean up old rate limit entries in bounded batches
+   *
+   * Limits cleanup to prevent blocking recordRequest on large datasets:
+   * - BATCH_SIZE: 1000 rows per iteration
+   * - MAX_BATCHES: 10 (max 10k rows per cleanup invocation)
+   *
+   * Stops early if fewer than BATCH_SIZE rows deleted (no more to clean).
+   */
+  private cleanup(): void {
+    const BATCH_SIZE = 1000;
+    const MAX_BATCHES = 10;
+    const cutoff = Date.now() - 7_200_000; // 2 hours
+
+    let totalDeleted = 0;
+
+    // Run bounded batches
+    for (let i = 0; i < MAX_BATCHES; i++) {
+      const result = this.db.run(
+        `DELETE FROM rate_limits 
+         WHERE rowid IN (
+           SELECT rowid FROM rate_limits 
+           WHERE timestamp < ? 
+           LIMIT ?
+         )`,
+        [cutoff, BATCH_SIZE],
+      );
+
+      totalDeleted += result.changes;
+
+      // Stop if we deleted less than batch size (no more to delete)
+      if (result.changes < BATCH_SIZE) break;
+    }
+
+    if (totalDeleted > 0) {
+      console.log("[RateLimiter] Cleanup completed:", {
+        deletedRows: totalDeleted,
+      });
+    }
+  }
+
   async recordRequest(agentName: string, endpoint: string): Promise<void> {
     const now = Date.now();
 
@@ -465,9 +509,9 @@ export class SqliteRateLimiter implements RateLimiter {
     stmt.run(agentName, endpoint, "hour", now);
 
     // Opportunistic cleanup of old entries (1% chance to avoid overhead)
+    // Now bounded to prevent blocking on large datasets
     if (Math.random() < 0.01) {
-      const cutoff = Date.now() - 7_200_000;
-      this.db.run(`DELETE FROM rate_limits WHERE timestamp < ?`, [cutoff]);
+      this.cleanup();
     }
   }
 

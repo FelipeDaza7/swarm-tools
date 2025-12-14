@@ -13,6 +13,35 @@ import { join } from "node:path";
 import { homedir } from "node:os";
 
 // ============================================================================
+// Query Timeout Wrapper
+// ============================================================================
+
+const DEFAULT_QUERY_TIMEOUT_MS = 30000; // 30 seconds
+
+/**
+ * Wrap a promise with a timeout
+ *
+ * @param promise - The promise to wrap
+ * @param ms - Timeout in milliseconds
+ * @param operation - Operation name for error message
+ * @returns The result of the promise
+ * @throws Error if timeout is reached
+ */
+export async function withTimeout<T>(
+  promise: Promise<T>,
+  ms: number,
+  operation: string,
+): Promise<T> {
+  const timeout = new Promise<never>((_, reject) =>
+    setTimeout(
+      () => reject(new Error(`${operation} timed out after ${ms}ms`)),
+      ms,
+    ),
+  );
+  return Promise.race([promise, timeout]);
+}
+
+// ============================================================================
 // Debug Logging
 // ============================================================================
 

@@ -35,6 +35,12 @@ export async function appendEvent(
   // Extract common fields
   const { type, project_key, timestamp, ...rest } = event;
 
+  console.log("[SwarmMail] Appending event", {
+    type,
+    projectKey: project_key,
+    timestamp,
+  });
+
   // Insert event
   const result = await db.query<{ id: number; sequence: number }>(
     `INSERT INTO events (type, project_key, timestamp, data)
@@ -49,7 +55,15 @@ export async function appendEvent(
   }
   const { id, sequence } = row;
 
+  console.log("[SwarmMail] Event appended", {
+    type,
+    id,
+    sequence,
+    projectKey: project_key,
+  });
+
   // Update materialized views based on event type
+  console.debug("[SwarmMail] Updating materialized views", { type, id });
   await updateMaterializedViews(db, { ...event, id, sequence });
 
   return { ...event, id, sequence };
@@ -88,9 +102,14 @@ export async function appendEvents(
       results.push(enrichedEvent);
     }
     await db.exec("COMMIT");
-  } catch (error) {
-    await db.exec("ROLLBACK");
-    throw error;
+  } catch (e) {
+    // FIX: Log rollback failures (connection lost, etc)
+    try {
+      await db.exec("ROLLBACK");
+    } catch (rollbackError) {
+      console.error("[SwarmMail] ROLLBACK failed:", rollbackError);
+    }
+    throw e;
   }
 
   return results;
@@ -285,60 +304,69 @@ async function updateMaterializedViews(
   db: Awaited<ReturnType<typeof getDatabase>>,
   event: AgentEvent & { id: number; sequence: number },
 ): Promise<void> {
-  switch (event.type) {
-    case "agent_registered":
-      await handleAgentRegistered(
-        db,
-        event as AgentRegisteredEvent & { id: number; sequence: number },
-      );
-      break;
+  try {
+    switch (event.type) {
+      case "agent_registered":
+        await handleAgentRegistered(
+          db,
+          event as AgentRegisteredEvent & { id: number; sequence: number },
+        );
+        break;
 
-    case "agent_active":
-      await db.query(
-        `UPDATE agents SET last_active_at = $1 WHERE project_key = $2 AND name = $3`,
-        [event.timestamp, event.project_key, event.agent_name],
-      );
-      break;
+      case "agent_active":
+        await db.query(
+          `UPDATE agents SET last_active_at = $1 WHERE project_key = $2 AND name = $3`,
+          [event.timestamp, event.project_key, event.agent_name],
+        );
+        break;
 
-    case "message_sent":
-      await handleMessageSent(
-        db,
-        event as MessageSentEvent & { id: number; sequence: number },
-      );
-      break;
+      case "message_sent":
+        await handleMessageSent(
+          db,
+          event as MessageSentEvent & { id: number; sequence: number },
+        );
+        break;
 
-    case "message_read":
-      await db.query(
-        `UPDATE message_recipients SET read_at = $1 WHERE message_id = $2 AND agent_name = $3`,
-        [event.timestamp, event.message_id, event.agent_name],
-      );
-      break;
+      case "message_read":
+        await db.query(
+          `UPDATE message_recipients SET read_at = $1 WHERE message_id = $2 AND agent_name = $3`,
+          [event.timestamp, event.message_id, event.agent_name],
+        );
+        break;
 
-    case "message_acked":
-      await db.query(
-        `UPDATE message_recipients SET acked_at = $1 WHERE message_id = $2 AND agent_name = $3`,
-        [event.timestamp, event.message_id, event.agent_name],
-      );
-      break;
+      case "message_acked":
+        await db.query(
+          `UPDATE message_recipients SET acked_at = $1 WHERE message_id = $2 AND agent_name = $3`,
+          [event.timestamp, event.message_id, event.agent_name],
+        );
+        break;
 
-    case "file_reserved":
-      await handleFileReserved(
-        db,
-        event as FileReservedEvent & { id: number; sequence: number },
-      );
-      break;
+      case "file_reserved":
+        await handleFileReserved(
+          db,
+          event as FileReservedEvent & { id: number; sequence: number },
+        );
+        break;
 
-    case "file_released":
-      await handleFileReleased(db, event);
-      break;
+      case "file_released":
+        await handleFileReleased(db, event);
+        break;
 
-    // Task events don't need materialized views (query events directly)
-    case "task_started":
-    case "task_progress":
-    case "task_completed":
-    case "task_blocked":
-      // No-op for now - could add task tracking table later
-      break;
+      // Task events don't need materialized views (query events directly)
+      case "task_started":
+      case "task_progress":
+      case "task_completed":
+      case "task_blocked":
+        // No-op for now - could add task tracking table later
+        break;
+    }
+  } catch (error) {
+    console.error("[SwarmMail] Failed to update materialized views", {
+      eventType: event.type,
+      eventId: event.id,
+      error,
+    });
+    throw error;
   }
 }
 
@@ -369,6 +397,13 @@ async function handleMessageSent(
   db: Awaited<ReturnType<typeof getDatabase>>,
   event: MessageSentEvent & { id: number; sequence: number },
 ): Promise<void> {
+  console.log("[SwarmMail] Handling message sent event", {
+    from: event.from_agent,
+    to: event.to_agents,
+    subject: event.subject,
+    projectKey: event.project_key,
+  });
+
   // Insert message
   const result = await db.query<{ id: number }>(
     `INSERT INTO messages (project_key, from_agent, subject, body, thread_id, importance, ack_required, created_at)
@@ -392,14 +427,22 @@ async function handleMessageSent(
   }
   const messageId = msgRow.id;
 
-  // Insert recipients
-  for (const agent of event.to_agents) {
+  // FIX: Bulk insert recipients to avoid N+1 queries
+  if (event.to_agents.length > 0) {
+    const values = event.to_agents.map((_, i) => `($1, $${i + 2})`).join(", ");
+    const params = [messageId, ...event.to_agents];
+
     await db.query(
       `INSERT INTO message_recipients (message_id, agent_name)
-       VALUES ($1, $2)
+       VALUES ${values}
        ON CONFLICT DO NOTHING`,
-      [messageId, agent],
+      params,
     );
+
+    console.log("[SwarmMail] Message recipients inserted", {
+      messageId,
+      recipientCount: event.to_agents.length,
+    });
   }
 }
 
@@ -407,20 +450,46 @@ async function handleFileReserved(
   db: Awaited<ReturnType<typeof getDatabase>>,
   event: FileReservedEvent & { id: number; sequence: number },
 ): Promise<void> {
-  for (const path of event.paths) {
+  console.log("[SwarmMail] Handling file reservation event", {
+    agent: event.agent_name,
+    paths: event.paths,
+    exclusive: event.exclusive,
+    projectKey: event.project_key,
+  });
+
+  // FIX: Bulk insert reservations to avoid N+1 queries
+  if (event.paths.length > 0) {
+    // Each path gets its own VALUES clause with placeholders:
+    // ($1=project_key, $2=agent_name, $3=path1, $4=exclusive, $5=reason, $6=created_at, $7=expires_at)
+    // ($1=project_key, $2=agent_name, $8=path2, $4=exclusive, $5=reason, $6=created_at, $7=expires_at)
+    // etc.
+    const values = event.paths
+      .map(
+        (_, i) =>
+          `($1, $2, $${i + 3}, $${event.paths.length + 3}, $${event.paths.length + 4}, $${event.paths.length + 5}, $${event.paths.length + 6})`,
+      )
+      .join(", ");
+
+    const params = [
+      event.project_key, // $1
+      event.agent_name, // $2
+      ...event.paths, // $3, $4, ... (one per path)
+      event.exclusive, // $N+3
+      event.reason || null, // $N+4
+      event.timestamp, // $N+5
+      event.expires_at, // $N+6
+    ];
+
     await db.query(
       `INSERT INTO reservations (project_key, agent_name, path_pattern, exclusive, reason, created_at, expires_at)
-       VALUES ($1, $2, $3, $4, $5, $6, $7)`,
-      [
-        event.project_key,
-        event.agent_name,
-        path,
-        event.exclusive,
-        event.reason || null,
-        event.timestamp,
-        event.expires_at,
-      ],
+       VALUES ${values}`,
+      params,
     );
+
+    console.log("[SwarmMail] File reservations inserted", {
+      agent: event.agent_name,
+      reservationCount: event.paths.length,
+    });
   }
 }
 
