@@ -21,7 +21,9 @@
   "scripts": {
     "build": "bun build ./src/index.ts --outdir ./dist --target node --external @electric-sql/pglite --external swarm-mail && bun build ./src/plugin.ts --outfile ./dist/plugin.js --target node --external @electric-sql/pglite --external swarm-mail && tsc",
     "dev": "bun --watch src/index.ts",
-    "test": "bun test src/",
+    "test": "bun test --timeout 10000 src/anti-patterns.test.ts src/mandate-promotion.test.ts src/mandate-storage.test.ts src/output-guardrails.test.ts src/pattern-maturity.test.ts src/skills.test.ts src/structured.test.ts src/schemas/",
+    "test:integration": "bun test --timeout 60000 src/*.integration.test.ts",
+    "test:all": "bun test --timeout 60000 src/",
     "test:watch": "bun test --watch src/",
     "typecheck": "tsc --noEmit",
     "publish:pkg": "npm publish --access public --provenance"

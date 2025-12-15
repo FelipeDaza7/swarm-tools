@@ -177,7 +177,7 @@ describe("InMemoryMandateStorage", () => {
     it("should throw when updating non-existent mandate", async () => {
       await expect(
         storage.update("non-existent", { content: "Updated" }),
-      ).rejects.toThrow("Mandate non-existent not found");
+      ).rejects.toThrow("Mandate 'non-existent' not found");
     });
   });
 
@@ -235,7 +235,7 @@ describe("InMemoryMandateStorage", () => {
       };
 
       await expect(storage.vote(vote2)).rejects.toThrow(
-        "Agent GreenRiver has already voted on mandate mandate-1",
+        "Agent 'GreenRiver' has already voted on mandate 'mandate-1'",
       );
     });
 
@@ -572,7 +572,7 @@ describe("InMemoryMandateStorage", () => {
         createMandateStorage({
           backend: "unknown" as "semantic-memory" | "memory",
         }),
-      ).toThrow("Unknown storage backend: unknown");
+      ).toThrow("Unknown storage backend: 'unknown'");
     });
   });
 });

@@ -12,7 +12,9 @@
   },
   "scripts": {
     "build": "bun build ./src/index.ts --outdir ./dist --target node && tsc",
-    "test": "vitest run",
+    "test": "vitest run --exclude '**/*.integration.test.ts'",
+    "test:integration": "vitest run --include '**/*.integration.test.ts' --testTimeout 60000",
+    "test:all": "vitest run --testTimeout 60000",
     "typecheck": "tsc --noEmit",
     "publish:pkg": "npm publish --access public --provenance"
   },
@@ -20,6 +22,7 @@
     "@electric-sql/pglite": "0.3.14",
     "effect": "^3.19.12",
     "minimatch": "^10.1.1",
+    "nanoid": "^5.1.6",
     "zod": "4.1.8"
   },
   "devDependencies": {
