@@ -2,8 +2,12 @@
   "title": "Documentation",
   "pages": [
     "index",
+    "quickstart",
+    "philosophy",
+    "patterns",
     "opencode-plugin",
     "swarm-mail",
-    "roadmap"
+    "roadmap",
+    "credits"
   ]
 }

@@ -1,0 +1,269 @@
+---
+title: Credits & Inspiration
+description: The people, projects, and ideas that shaped Swarm Tools
+---
+
+# Credits & Inspiration
+
+Swarm Tools stands on the shoulders of giants. This page acknowledges the people, projects, and ideas that made it possible.
+
+## Core Inspirations
+
+### Durable Streams Protocol
+
+**Kyle Matthews** ([@kylemathews](https://twitter.com/kylemathews)) - Founder/CPO at [Electric SQL](https://electric-sql.com/)
+
+The Durable Streams protocol is the conceptual foundation for Swarm Mail's primitives. Kyle's insight that composable primitives (cursors, deferred, locks) can build powerful actor systems without external infrastructure directly inspired our architecture.
+
+- [Original tweet thread](https://x.com/kylemathews/status/1999896667030700098)
+- [Electric SQL](https://electric-sql.com/) - Real-time sync engine for Postgres
+
+**Key ideas we adopted:**
+- DurableCursor for checkpointed stream consumption
+- DurableDeferred for distributed promises
+- DurableLock for CAS-based mutual exclusion
+- Composable primitives over monolithic frameworks
+
+---
+
+### Agent Mail
+
+**SST Team** - [OpenCode](https://github.com/sst/opencode)
+
+Agent Mail is SST's multi-agent coordination layer for OpenCode. Swarm Mail's API surface is heavily inspired by Agent Mail's design, adapted for embedded operation.
+
+**Key ideas we adopted:**
+- Agent registration and naming
+- File reservation protocol
+- Thread-based message organization
+- Inbox with context-safe limits
+
+**Where we diverged:**
+- Embedded (PGLite) vs external server (MCP)
+- Event sourcing vs CRUD operations
+- Effect-TS integration
+- Learning system integration
+
+---
+
+### Beads
+
+**Steve Yegge** ([@steveyegge](https://twitter.com/steveyegge)) - [Beads](https://github.com/steveyegge/beads)
+
+Beads is AI-native issue tracking that lives in your repo. The `beads_*` tools in our plugin wrap the Beads CLI with type-safe validation.
+
+**Why Beads matters:**
+- Git-native (issues sync like code)
+- CLI-first (works with AI agents)
+- No web UI required
+- Branch-aware tracking
+
+---
+
+### Effect-TS
+
+**Michael Arnaldi** and the [Effect community](https://effect.website/)
+
+Effect-TS powers our durable primitives. Its composability, type safety, and resource management make complex coordination patterns ergonomic.
+
+**What Effect gives us:**
+- Typed errors (errors are part of the signature)
+- Dependency injection via Layers
+- Resource safety (`Effect.ensuring`)
+- Retry schedules with exponential backoff
+- Full type inference
+
+---
+
+## Books & Papers
+
+### Working Effectively with Legacy Code
+
+**Michael Feathers**
+
+The seam model and dependency-breaking techniques in our `testing-patterns` skill come directly from this book. Essential reading for anyone working with existing code.
+
+**Key concepts:**
+- Seams and enabling points
+- Characterization tests
+- 25 dependency-breaking techniques
+- "Code without tests is hard to change safely"
+
+---
+
+### Domain-Driven Design
+
+**Eric Evans**
+
+Ubiquitous language, bounded contexts, and aggregate design influence how we think about agent coordination boundaries.
+
+---
+
+### The Pragmatic Programmer
+
+**Dave Thomas & Andy Hunt**
+
+Tracer bullets, DRY, orthogonality, and "don't live with broken windows" - foundational principles that guide our design decisions.
+
+---
+
+### Designing Data-Intensive Applications
+
+**Martin Kleppmann**
+
+Event sourcing, stream processing, and exactly-once semantics. This book is why Swarm Mail is event-sourced.
+
+---
+
+### A Philosophy of Software Design
+
+**John Ousterhout**
+
+Deep modules, complexity management, and "define errors out of existence" - principles that shape our API design.
+
+---
+
+## People & Thinkers
+
+### Rich Hickey
+
+Creator of Clojure. "Simple Made Easy", hammock-driven development, and the value of values. His talks on simplicity vs complexity inform our "primitives, not frameworks" philosophy.
+
+---
+
+### Dan Abramov
+
+React mental models, "just JavaScript", and algebraic effects. His writing on component design influences how we think about composable primitives.
+
+---
+
+### Sandi Metz
+
+SOLID made practical, small objects, and "99 Bottles of OOP". Her approach to object-oriented design informs our service architecture.
+
+---
+
+### Kent C. Dodds
+
+Testing trophy, testing-library philosophy, and colocation. His testing principles are embedded in our `testing-patterns` skill.
+
+---
+
+### obra (Jesse Vincent)
+
+The [superpowers](https://github.com/obra/superpowers) repository's subagent coordination patterns directly influenced our swarm coordination skill. Fresh subagent per task, code review between tasks, and parallel dispatch patterns come from this work.
+
+---
+
+## Technologies
+
+### PGLite
+
+[Electric SQL's PGLite](https://github.com/electric-sql/pglite) - Postgres compiled to WASM. This makes "local-first, no external servers" possible. A real database without deployment complexity.
+
+---
+
+### Zod
+
+[Zod](https://zod.dev/) - TypeScript-first schema validation. Every tool input and output is validated with Zod. Types as documentation, runtime validation as safety net.
+
+---
+
+### Bun
+
+[Bun](https://bun.sh/) - Fast JavaScript runtime. Our build tooling, test runner, and development experience are powered by Bun.
+
+---
+
+### Turborepo
+
+[Turborepo](https://turbo.build/) - Monorepo build system. Manages our multi-package workspace with intelligent caching.
+
+---
+
+## Concepts & Patterns
+
+### Event Sourcing
+
+**Greg Young**, **Martin Fowler**
+
+All state changes are events first, materialized views second. This gives us audit trails, time travel, and crash recovery.
+
+---
+
+### Actor Model
+
+**Carl Hewitt**, **Erlang/OTP**
+
+Agents as actors with mailboxes. Message passing for coordination. Isolation for fault tolerance.
+
+---
+
+### CQRS
+
+**Greg Young**
+
+Command Query Responsibility Segregation. Events are commands, projections are queries. Different models for different purposes.
+
+---
+
+### Parse, Don't Validate
+
+**Alexis King**
+
+Validate at the boundary, work with typed structures internally. Once data passes Zod validation, the type system guarantees correctness.
+
+---
+
+## Community
+
+### OpenCode Community
+
+The OpenCode Discord and GitHub discussions. Real-world feedback on agent coordination challenges shaped our priorities.
+
+---
+
+### Effect Discord
+
+The Effect community's help with Effect-TS patterns, especially around Layers and resource management.
+
+---
+
+## License
+
+Swarm Tools is MIT licensed. Use freely in commercial and open-source projects.
+
+We believe in open source. The ideas here came from the community, and we give them back to the community.
+
+---
+
+## Contributing
+
+Want to contribute? We welcome:
+- New bundled skills
+- Custom database adapters
+- Performance improvements
+- Documentation enhancements
+- Bug reports and feature requests
+
+See [GitHub](https://github.com/joelhooks/opencode-swarm-plugin) for contribution guidelines.
+
+---
+
+## A Note on AI Assistance
+
+This project was built with significant AI assistance. Claude, GPT, and other AI agents helped write code, documentation, and tests. We believe AI-assisted development is the future, and Swarm Tools is designed to make that future better.
+
+The irony isn't lost on us: we're building tools for AI agents, with AI agents. It's turtles all the way down.
+
+---
+
+```
+    *    *  🐝  *    *
+  *    *    *    *    *
+    🐝  THANK YOU  🐝
+  *    *    *    *    *
+    *    *  🐝  *    *
+```
+
+To everyone who shared ideas, wrote code, reported bugs, or just used the tools - thank you. Swarm Tools exists because of you.

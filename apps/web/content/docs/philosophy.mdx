@@ -1,0 +1,254 @@
+---
+title: Philosophy
+description: Design principles and mental models behind Swarm Tools
+---
+
+# Philosophy
+
+The design principles and mental models that shape Swarm Tools.
+
+## Core Belief
+
+**AI agents are better together.** A single agent hitting context limits, making mistakes, or getting stuck is the norm. Multiple specialized agents coordinating on a shared task - with proper primitives - can accomplish what no single agent can.
+
+But coordination is hard. Without the right primitives, agents conflict, duplicate work, and lose track of state. Swarm Tools provides those primitives.
+
+## Design Principles
+
+### Primitives, Not Frameworks
+
+Each package solves one problem well. You compose what you need.
+
+**Why?** Frameworks impose opinions. Primitives enable creativity. You might need event sourcing without the full plugin. You might want file reservations without beads. Mix and match.
+
+```
+❌ Framework approach: "Use our opinionated full-stack solution"
+✓ Primitives approach: "Here's an event store. Here's a lock. Compose them."
+```
+
+### Local-First, Zero Dependencies
+
+No external servers. No Redis. No Kafka. No cloud services.
+
+**Why?** AI agents run in constrained environments. They can't spin up infrastructure. They need coordination that "just works" with `npm install`.
+
+PGLite (embedded Postgres compiled to WASM) gives us a real database without deployment complexity.
+
+### Event Sourcing by Default
+
+All state changes are events first, materialized views second.
+
+**Why?**
+- **Audit trail** - Every agent action is logged forever
+- **Time travel** - Replay events to reconstruct any past state
+- **Debugging** - When agents conflict, trace the exact sequence
+- **Learning** - Analyze patterns to improve future decompositions
+- **Resumability** - Crash recovery via checkpointed cursors
+
+### Type Safety as Documentation
+
+Full TypeScript with Zod schemas. Types are the first line of documentation.
+
+**Why?** AI agents read code. Type signatures tell them what's possible. Runtime validation catches mistakes early. No "stringly-typed" APIs.
+
+### Fail Fast, Recover Gracefully
+
+Validate inputs immediately. Provide clear error messages. But also: design for recovery.
+
+**Why?** Agents make mistakes. The question isn't "will something go wrong?" but "how quickly can we detect and recover?"
+
+- File reservations have TTL (auto-expire stale locks)
+- Cursors checkpoint position (resume after crash)
+- Events are immutable (can't corrupt history)
+
+## Mental Models
+
+### The Coordinator Pattern
+
+One agent orchestrates, others execute. The coordinator:
+- Decomposes tasks into subtasks
+- Assigns work to specialists
+- Monitors progress
+- Handles conflicts
+- Aggregates results
+
+**Key insight:** The coordinator should NOT do the work. It orchestrates. This keeps its context clean for coordination decisions.
+
+### Fresh Context Per Task
+
+Each worker agent starts with a clean slate. No accumulated cruft from previous tasks.
+
+**Why?** Context pollution is the enemy of agent effectiveness. A worker that's been debugging for 30 minutes has a polluted context. A fresh worker with clear instructions performs better.
+
+### The Seam Model (from Michael Feathers)
+
+A **seam** is a place where you can alter behavior without editing the source file.
+
+Applied to agents: Design systems with seams where agents can inject behavior, swap implementations, and test in isolation.
+
+```typescript
+// Hard dependency (no seam)
+const gateway = new StripeGateway();
+
+// With seam (injectable)
+constructor(private gateway: PaymentGateway = new StripeGateway()) {}
+```
+
+### Parse, Don't Validate
+
+Validate data at the boundary, then work with typed structures internally.
+
+**Why?** Once data passes validation, you don't need defensive checks everywhere. The type system guarantees correctness.
+
+```typescript
+// ❌ Validate everywhere
+function process(data: unknown) {
+  if (!data || typeof data.id !== 'string') throw new Error();
+  // still need to check later...
+}
+
+// ✓ Parse at boundary
+const validated = BeadSchema.parse(data);
+// Now `validated` is typed, no more checks needed
+```
+
+### Make Impossible States Impossible
+
+Use discriminated unions and type narrowing to eliminate invalid states at compile time.
+
+```typescript
+// ❌ Possible invalid state
+type Task = {
+  status: 'pending' | 'complete';
+  completedAt?: Date;  // Can be set when pending!
+}
+
+// ✓ Impossible states impossible
+type Task = 
+  | { status: 'pending' }
+  | { status: 'complete'; completedAt: Date };
+```
+
+## Coordination Philosophy
+
+### Reserve Before Edit
+
+Always reserve files before modifying them. This prevents conflicts between concurrent agents.
+
+**Pattern:**
+1. `swarmmail_reserve()` - Claim files
+2. Edit files
+3. `swarm_complete()` - Auto-releases
+
+### Communicate, Don't Assume
+
+Agents should over-communicate. Silent agents cause coordination failures.
+
+**Rules:**
+- Progress updates every 30 minutes (or at milestones)
+- Blockers reported immediately (not after 30 minutes of spinning)
+- Scope changes announced before acting
+
+### Thread by Task
+
+Use bead IDs as thread IDs for all coordination messages. This keeps conversations organized and traceable.
+
+```typescript
+swarmmail_send({
+  to: ["coordinator"],
+  subject: "Progress: bd-123.2",
+  body: "Auth service 50% complete",
+  thread_id: "bd-123"  // Epic ID
+})
+```
+
+### Land the Plane
+
+Every session must end with:
+1. Close completed beads
+2. `beads_sync()`
+3. `git push`
+4. Verify "up to date with origin"
+
+**The plane is not landed until git push succeeds.**
+
+## Learning Philosophy
+
+### Confidence Decay
+
+Learnings fade over time unless revalidated. A pattern that worked 6 months ago may not apply today.
+
+**Implementation:** 90-day half-life on pattern weights. Validate memories to reset decay.
+
+### Implicit Feedback
+
+Actions speak louder than explicit ratings. We infer quality from:
+- Duration (fast + success = good)
+- Error count (fewer = better)
+- Retry count (fewer = better)
+
+### Pattern Maturity
+
+Patterns evolve through stages:
+- **Candidate** - New, unproven
+- **Established** - Some evidence of success
+- **Proven** - Consistent success (1.5x weight)
+- **Deprecated** - Consistent failure (0x weight)
+
+### Anti-Pattern Inversion
+
+Patterns with high failure rates automatically invert into warnings:
+
+```
+"Split by file type" (80% failure rate)
+→ "AVOID: Split by file type - historically fails 80% of the time"
+```
+
+## What We Don't Do
+
+### No Magic
+
+Everything is explicit. No hidden behavior. No "smart" defaults that surprise you.
+
+### No Lock-In
+
+Works with any AI agent framework. Claude, GPT, Gemini, or your own. We provide primitives, not a walled garden.
+
+### No Cloud Required
+
+Everything runs locally. Your data stays on your machine. No telemetry, no phone-home, no accounts.
+
+### No Premature Abstraction
+
+We build what's needed, when it's needed. YAGNI is real. The codebase should be easy to delete from.
+
+## Influences
+
+These ideas didn't emerge from nowhere. Key influences:
+
+- **Event Sourcing** - Greg Young, Martin Fowler
+- **Actor Model** - Carl Hewitt, Erlang/OTP
+- **Durable Streams** - Kyle Matthews (Electric SQL)
+- **Effect-TS** - Michael Arnaldi, the Effect community
+- **Working Effectively with Legacy Code** - Michael Feathers
+- **Domain-Driven Design** - Eric Evans
+- **The Pragmatic Programmer** - Dave Thomas, Andy Hunt
+
+See [Credits](/docs/credits) for full acknowledgments.
+
+## Summary
+
+Swarm Tools is built on these beliefs:
+
+1. **Primitives over frameworks** - Compose what you need
+2. **Local-first** - No external dependencies
+3. **Event sourcing** - Full audit trail, time travel, recovery
+4. **Type safety** - Types as documentation
+5. **Fail fast, recover gracefully** - Design for the unhappy path
+6. **Fresh context per task** - Avoid pollution
+7. **Reserve before edit** - Prevent conflicts
+8. **Communicate, don't assume** - Over-communicate
+9. **Land the plane** - Every session ends with git push
+10. **Learn from outcomes** - Confidence decay, pattern maturity
+
+These principles guide every design decision. When in doubt, we choose simplicity, explicitness, and composability.

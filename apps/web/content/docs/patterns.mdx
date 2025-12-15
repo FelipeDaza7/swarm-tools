@@ -1,0 +1,495 @@
+---
+title: Patterns & Practices
+description: Coordination patterns, anti-patterns, and best practices for multi-agent work
+---
+
+# Patterns & Practices
+
+Battle-tested patterns for multi-agent coordination. Learn from what works and avoid what doesn't.
+
+## Coordination Patterns
+
+### The Coordinator Pattern
+
+One agent orchestrates, others execute. The coordinator never does the work itself.
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                      COORDINATOR                            │
+│  - Decomposes tasks                                         │
+│  - Assigns to workers                                       │
+│  - Monitors progress                                        │
+│  - Handles conflicts                                        │
+│  - Aggregates results                                       │
+│  - DOES NOT edit files                                      │
+└─────────────────────────────────────────────────────────────┘
+         │              │              │
+         ▼              ▼              ▼
+    ┌─────────┐   ┌─────────┐   ┌─────────┐
+    │ Worker  │   │ Worker  │   │ Worker  │
+    │   A     │   │   B     │   │   C     │
+    └─────────┘   └─────────┘   └─────────┘
+```
+
+**Why it works:** Keeps coordinator context clean for orchestration decisions. Workers have fresh context for focused execution.
+
+**Anti-pattern:** Coordinator editing files directly. This pollutes context and creates coordination blind spots.
+
+---
+
+### Fresh Subagent Per Task
+
+Each task gets a fresh agent with clean context. No accumulated debugging cruft.
+
+```typescript
+// ✓ Fresh agent per task
+for (const subtask of subtasks) {
+  Task({
+    subagent_type: "swarm/worker",
+    prompt: generatePrompt(subtask)  // Fresh context
+  });
+}
+
+// ❌ Reusing polluted context
+let agent = createAgent();
+for (const subtask of subtasks) {
+  agent.execute(subtask);  // Context accumulates
+}
+```
+
+**Why it works:** An agent that's been debugging for 30 minutes has polluted context. A fresh agent with clear instructions performs better.
+
+---
+
+### Reserve-Edit-Release
+
+Always reserve files before modifying. Release when done.
+
+```typescript
+// 1. Reserve
+await swarmmail_reserve({
+  paths: ["src/auth/**"],
+  reason: "bd-123.2: Auth service",
+  ttl_seconds: 3600
+});
+
+// 2. Edit
+// ... make changes ...
+
+// 3. Release (automatic via swarm_complete)
+await swarm_complete({
+  bead_id: "bd-123.2",
+  files_touched: ["src/auth/service.ts"]
+});
+```
+
+**Why it works:** Prevents edit conflicts. TTL ensures stale locks don't block forever.
+
+---
+
+### Thread by Bead ID
+
+Use bead IDs as thread IDs for all coordination messages.
+
+```typescript
+// All messages for epic bd-123 use thread_id: "bd-123"
+swarmmail_send({
+  to: ["coordinator"],
+  subject: "Progress: bd-123.2",
+  body: "Auth service 50% complete",
+  thread_id: "bd-123"  // Epic ID
+});
+```
+
+**Why it works:** Keeps conversations organized. Easy to trace all communication for a task.
+
+---
+
+### Ask Pattern (Request/Response)
+
+Synchronous-style RPC over async streams.
+
+```
+Agent A                              Agent B
+   │                                    │
+   │ 1. Create deferred                 │
+   │    url = "deferred:abc123"         │
+   │                                    │
+   │ 2. Send message with replyTo=url   │
+   ├───────────────────────────────────▶│
+   │                                    │
+   │ 3. Block on deferred.value         │ 4. Process request
+   │    (waits...)                      │
+   │                                    │
+   │                   5. Resolve(url)  │
+   │◀───────────────────────────────────┤
+   │                                    │
+   │ 6. Unblocked, return response      │
+```
+
+**Why it works:** Feels like RPC, but it's event-driven. Resilient to crashes (timeout instead of hang).
+
+---
+
+## Decomposition Strategies
+
+### File-Based Decomposition
+
+Split by file or directory. Best for refactoring and migrations.
+
+```
+Task: "Migrate from Moment.js to date-fns"
+
+Subtasks:
+├── bd-123.1: Migrate src/utils/dates.ts
+├── bd-123.2: Migrate src/components/Calendar.tsx
+├── bd-123.3: Migrate src/api/scheduling.ts
+└── bd-123.4: Update tests
+```
+
+**When to use:** Refactoring, migrations, "update all X to Y" tasks.
+
+---
+
+### Feature-Based Decomposition
+
+Split by vertical slice. Best for new features.
+
+```
+Task: "Add user authentication"
+
+Subtasks:
+├── bd-123.1: Database schema + migrations
+├── bd-123.2: Auth service (JWT, refresh tokens)
+├── bd-123.3: API routes (/login, /logout, /refresh)
+└── bd-123.4: Frontend components + hooks
+```
+
+**When to use:** New features, vertical slices, "add X" tasks.
+
+---
+
+### Risk-Based Decomposition
+
+Tackle highest-risk items first. Best for bug fixes and security.
+
+```
+Task: "Fix authentication vulnerabilities"
+
+Subtasks (ordered by risk):
+├── bd-123.1: [CRITICAL] Fix SQL injection in login
+├── bd-123.2: [HIGH] Add rate limiting
+├── bd-123.3: [MEDIUM] Improve password hashing
+└── bd-123.4: [LOW] Add security headers
+```
+
+**When to use:** Bug fixes, security issues, "fix X" tasks.
+
+---
+
+## Communication Patterns
+
+### Progress Updates
+
+Report progress at milestones or every 30 minutes.
+
+```typescript
+swarmmail_send({
+  to: ["coordinator"],
+  subject: "Progress: bd-123.2",
+  body: "Schema defined, starting service layer. ETA 20min.",
+  thread_id: "bd-123"
+});
+```
+
+**Rule:** If you haven't sent an update in 30 minutes, you're doing it wrong.
+
+---
+
+### Blocker Notifications
+
+Report blockers immediately with high importance.
+
+```typescript
+swarmmail_send({
+  to: ["coordinator"],
+  subject: "BLOCKED: bd-123.2 needs database schema",
+  body: "Can't proceed without db migration from bd-123.1. Need User table schema.",
+  importance: "high",
+  thread_id: "bd-123"
+});
+
+// Also update bead status
+beads_update({ id: "bd-123.2", status: "blocked" });
+```
+
+**Rule:** Don't spin for 30 minutes before reporting. Report immediately.
+
+---
+
+### Scope Change Requests
+
+Announce scope changes before acting. Wait for approval.
+
+```typescript
+swarmmail_send({
+  to: ["coordinator"],
+  subject: "Scope Change: bd-123.2",
+  body: "Found X, suggests expanding to include Y. Adds ~15min. Proceed?",
+  thread_id: "bd-123",
+  ack_required: true
+});
+// Wait for coordinator response before expanding
+```
+
+**Rule:** Silent scope creep causes integration failures.
+
+---
+
+## Anti-Patterns
+
+### The Silent Agent
+
+Agent works without communication. Conflicts discovered too late.
+
+```
+❌ Agent spawns → works silently for 45 minutes → closes bead
+✓ Agent spawns → init → reserve → progress update → complete
+```
+
+**Fix:** Require `swarmmail_init` before any work. Check inbox regularly.
+
+---
+
+### Context Pollution
+
+Coordinator does planning inline, exhausting context on long swarms.
+
+```typescript
+// ❌ Inline planning (pollutes context)
+const plan = await swarm_plan_prompt({ task });
+// ... agent reasons about decomposition ...
+// ... context fills with file contents ...
+
+// ✓ Delegate to subagent (clean context)
+const result = await Task({
+  subagent_type: "swarm/planner",
+  prompt: "Generate BeadTree for: " + task
+});
+// Only receive final JSON, not reasoning
+```
+
+**Fix:** Delegate planning to `swarm/planner` subagent.
+
+---
+
+### Manual Fix After Subagent Failure
+
+Coordinator tries to fix subagent failures manually, polluting context.
+
+```typescript
+// ❌ Manual fix (pollutes coordinator context)
+if (subagentFailed) {
+  // Coordinator starts debugging...
+  // Context fills with failed attempts...
+}
+
+// ✓ Dispatch fix subagent (fresh context)
+if (subagentFailed) {
+  Task({
+    subagent_type: "swarm/worker",
+    prompt: "Fix: " + failureDetails
+  });
+}
+```
+
+**Fix:** Always dispatch a fix subagent. Never fix manually.
+
+---
+
+### Over-Decomposition
+
+10 subtasks for 20 lines of code.
+
+```
+❌ Task: "Add health endpoint"
+   Subtasks: 10 items (overkill)
+
+✓ Task: "Add health endpoint"
+   Subtasks: 1-2 items (appropriate)
+```
+
+**Fix:** 2-5 subtasks max. If task is simple, don't swarm.
+
+---
+
+### Under-Specification
+
+Vague subtask descriptions that lead to wrong implementations.
+
+```
+❌ "Implement backend"
+✓ "Implement auth service with JWT tokens, 5min expiry, refresh token rotation"
+```
+
+**Fix:** Clear goal, specific files, measurable success criteria.
+
+---
+
+### Skipping File Reservations
+
+Editing files without reserving. Conflicts discovered at merge.
+
+```typescript
+// ❌ Edit without reservation
+await editFile("src/auth.ts");  // Another agent might be editing!
+
+// ✓ Reserve first
+await swarmmail_reserve({ paths: ["src/auth.ts"] });
+await editFile("src/auth.ts");
+```
+
+**Fix:** Always reserve before edit. `swarm_complete` auto-releases.
+
+---
+
+## Quality Patterns
+
+### Code Review Between Tasks
+
+Review after each task, not just at the end.
+
+```
+Task 1 → Review → Fix issues → Task 2 → Review → Fix issues → ...
+```
+
+**Why:** Catches issues before they compound. Cheaper than debugging cascading failures.
+
+---
+
+### Severity-Based Triage
+
+Not everything is critical. Categorize issues:
+
+| Severity | Examples | Action |
+|----------|----------|--------|
+| **Critical** | Bugs, security, data loss | Fix immediately, block progress |
+| **Important** | Architecture, missing features | Fix before next task |
+| **Minor** | Style, optimization | Note for later |
+
+---
+
+### Characterization Tests
+
+Document what code actually does before changing it.
+
+```typescript
+// Step 1: Write failing test
+test("calculateFee returns... something", () => {
+  expect(calculateFee(100, "premium")).toBe(0);  // Will fail
+});
+
+// Step 2: After failure shows "Expected 0, got 15"
+test("calculateFee returns 15 for premium with 100", () => {
+  expect(calculateFee(100, "premium")).toBe(15);  // Documents actual behavior
+});
+```
+
+**Why:** Enables safe refactoring. You know what to preserve.
+
+---
+
+## Session Patterns
+
+### Session Start
+
+```typescript
+// 1. What's ready?
+beads_ready()
+
+// 2. What's in progress?
+beads_query({ status: "in_progress" })
+
+// 3. Check inbox
+swarmmail_inbox()
+```
+
+---
+
+### Session End (Land the Plane)
+
+```typescript
+// 1. Close completed work
+beads_close({ id: "bd-123", reason: "Done: implemented auth" })
+
+// 2. Sync to git
+beads_sync()
+
+// 3. Push (YOU do this, don't defer)
+// git push
+
+// 4. Verify
+// git status → "up to date with origin"
+
+// 5. What's next?
+beads_ready()
+```
+
+**Rule:** The plane is not landed until `git push` succeeds.
+
+---
+
+## Decision Trees
+
+### When to Swarm
+
+```
+Task touches 3+ files?
+├─ Yes → Natural parallel boundaries?
+│  ├─ Yes → Coordination overhead acceptable?
+│  │  ├─ Yes → SWARM ✓
+│  │  └─ No → Single agent
+│  └─ No → Single agent
+└─ No → Single agent
+```
+
+**Heuristic:** If you can describe the task in one sentence without "and", don't swarm.
+
+---
+
+### When to Parallelize Investigations
+
+```
+Multiple failures?
+├─ Yes → Are they independent?
+│  ├─ Yes → 3+ failures?
+│  │  ├─ Yes → PARALLEL DISPATCH ✓
+│  │  └─ No → Sequential agents
+│  └─ No (related) → Single agent investigates all
+└─ No → Single investigation
+```
+
+**Heuristics:**
+- Different test files = likely independent
+- Different subsystems = likely independent
+- Same error across files = likely related
+
+---
+
+## Summary
+
+**Do:**
+- Fresh agent per task
+- Reserve before edit
+- Communicate progress and blockers
+- Review between tasks
+- Land the plane (git push)
+
+**Don't:**
+- Silent agents
+- Inline planning in coordinator
+- Manual fixes after subagent failure
+- Over-decompose simple tasks
+- Skip file reservations
+
+These patterns emerge from real multi-agent coordination. They're not theoretical - they're battle-tested.
