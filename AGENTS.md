@@ -216,3 +216,61 @@ OpenCode plugin providing:
 - Agent Mail (inter-agent messaging)
 - Learning system (pattern maturity, anti-pattern detection)
 - Skills system (knowledge injection)
+
+## Publishing (Changesets + Trusted Publishers)
+
+This repo uses **Changesets** for versioning and **npm Trusted Publishers** (OIDC) for publishing - no npm tokens needed.
+
+### Release Flow
+
+1. Make changes to packages
+2. Create a changeset describing the change:
+   ```bash
+   bunx changeset
+   # Select packages, bump type (patch/minor/major), write summary
+   ```
+3. Commit the changeset file (`.changeset/*.md`) with your changes
+4. Push to main
+5. Changesets action creates a "chore: release packages" PR with version bumps
+6. Merge that PR → automatically publishes to npm via OIDC
+
+### Commands
+
+```bash
+# Create a new changeset
+bunx changeset
+
+# Preview what versions would be bumped
+bunx changeset status
+
+# Manually bump versions (CI does this automatically)
+bunx changeset version
+
+# Manually publish (CI does this automatically)
+bunx changeset publish
+```
+
+### How Trusted Publishers Work
+
+- No `NPM_TOKEN` secret needed
+- GitHub Actions workflow has `id-token: write` permission
+- npm packages configured with Trusted Publisher pointing to `joelhooks/opencode-swarm-plugin` + `publish.yml`
+- npm CLI 11.5.1+ auto-detects OIDC environment and authenticates
+- Provenance attestations generated automatically
+
+### Configured Packages
+
+| Package | npm | Trusted Publisher |
+|---------|-----|-------------------|
+| `opencode-swarm-plugin` | [npm](https://www.npmjs.com/package/opencode-swarm-plugin) | ✅ `publish.yml` |
+| `swarm-mail` | [npm](https://www.npmjs.com/package/swarm-mail) | ✅ `publish.yml` |
+
+### Adding a New Package to Publishing
+
+1. Publish initial version manually: `cd packages/new-pkg && npm publish --access public`
+2. Go to https://www.npmjs.com/package/new-pkg/access
+3. Add Trusted Publisher:
+   - Organization: `joelhooks`
+   - Repository: `opencode-swarm-plugin`
+   - Workflow: `publish.yml`
+4. Future releases handled automatically via changesets
