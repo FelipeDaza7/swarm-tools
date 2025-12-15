@@ -7,7 +7,7 @@
   ],
   "scripts": {
     "version": "bunx changeset version",
-    "release": "bun turbo publish:pkg",
+    "release": "bunx changeset publish",
     "test:integration": "bun --filter=opencode-swarm-plugin test:integration"
   },
   "devDependencies": {
