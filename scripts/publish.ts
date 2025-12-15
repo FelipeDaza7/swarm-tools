@@ -1,12 +1,13 @@
 #!/usr/bin/env bun
 /**
- * Custom publish script that uses bun publish to properly resolve workspace:* protocols
+ * Custom publish script that resolves workspace:* protocols before npm publish
  * 
- * Changesets uses npm publish which doesn't resolve workspace protocols.
- * Bun publish does resolve them, so we use this script instead.
+ * 1. Uses bun pm pack to create tarball (resolves workspace:*)
+ * 2. Uses npm publish on the tarball (supports OIDC trusted publishers)
  */
 
 import { $ } from "bun";
+import { readdir, unlink } from "node:fs/promises";
 
 const packages = [
   "packages/swarm-mail",
@@ -27,6 +28,13 @@ async function getLocalVersion(pkgPath: string): Promise<{ name: string; version
   return { name: pkg.name, version: pkg.version };
 }
 
+async function findTarball(pkgPath: string): Promise<string> {
+  const files = await readdir(pkgPath);
+  const tarball = files.find(f => f.endsWith('.tgz'));
+  if (!tarball) throw new Error(`No tarball found in ${pkgPath}`);
+  return `${pkgPath}/${tarball}`;
+}
+
 async function main() {
   console.log("🦋 Checking packages for publishing...\n");
 
@@ -42,8 +50,21 @@ async function main() {
     console.log(`📦 Publishing ${name}@${version} (npm has ${publishedVersion ?? "nothing"})...`);
     
     try {
-      // Use bun publish which resolves workspace:* protocols
-      await $`bun publish --access public`.cwd(pkgPath).quiet();
+      // Step 1: Use bun pack to create tarball (resolves workspace:* protocols)
+      console.log(`   📋 Creating tarball with bun pack...`);
+      await $`bun pm pack`.cwd(pkgPath).quiet();
+      
+      // Step 2: Find the tarball
+      const tarball = await findTarball(pkgPath);
+      console.log(`   📦 Found tarball: ${tarball}`);
+      
+      // Step 3: Publish tarball with npm (supports OIDC)
+      console.log(`   🚀 Publishing with npm...`);
+      await $`npm publish ${tarball} --access public`.quiet();
+      
+      // Step 4: Clean up tarball
+      await unlink(tarball);
+      
       console.log(`✅ ${name}@${version} published successfully`);
       
       // Create git tag
