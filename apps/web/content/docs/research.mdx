@@ -1,0 +1,333 @@
+---
+title: Research & Design
+description: Engineering design reviews, architecture decisions, and feasibility studies
+---
+
+# Research & Design
+
+Deep dives into architecture decisions, feasibility studies, and engineering design reviews. These documents capture the thinking behind major technical decisions.
+
+---
+
+## Event-Sourced Beads with Effect-TS
+
+**Date:** December 2025  
+**Status:** Research Complete  
+**Recommendation:** Build (Hybrid Approach)
+
+### Executive Summary
+
+**Question:** How feasible is rebuilding [steveyegge/beads](https://github.com/steveyegge/beads) using Effect-TS durable streams and event sourcing?
+
+**Answer:** Highly feasible with 75% infrastructure reuse from swarm-mail.
+
+| Aspect | Assessment |
+|--------|------------|
+| **Technical Feasibility** | High - swarm-mail provides solid foundation |
+| **Effort Estimate** | 2-3 weeks MVP, 4-6 weeks full parity |
+| **Risk Level** | Medium - git sync proven, event sourcing adds complexity |
+| **Recommendation** | **BUILD IT** - hybrid CRUD + event audit trail |
+
+### Problem Statement
+
+We have two separate systems:
+1. **steveyegge/beads** (Go) - Battle-tested issue tracker with git sync
+2. **swarm-mail** (TypeScript/Effect) - Event sourcing primitives for agent coordination
+
+The goal: A unified TypeScript implementation that maintains beads' proven git sync while leveraging swarm-mail's event sourcing infrastructure.
+
+### Architecture Comparison
+
+#### steveyegge/beads (Current)
+
+```
+┌─────────────────────────────────────────┐
+│           steveyegge/beads              │
+├─────────────────────────────────────────┤
+│  CLI (bd) - 50+ subcommands             │
+├─────────────────────────────────────────┤
+│  RPC Layer (daemon architecture)        │
+├─────────────────────────────────────────┤
+│  Storage (SQLite)                       │
+│  ├── issues table (CRUD, mutable)       │
+│  ├── dependencies table                 │
+│  ├── events table (AUDIT ONLY)          │
+│  └── blocked_issues_cache (derived)     │
+├─────────────────────────────────────────┤
+│  Git Sync                               │
+│  ├── JSONL export (snapshots)           │
+│  ├── 3-way merge driver                 │
+│  └── Hash-based IDs                     │
+└─────────────────────────────────────────┘
+```
+
+**Key insight:** beads is **NOT event-sourced**. It's hybrid CRUD + event audit trail. Events are for audit only, not replayed for state reconstruction.
+
+#### Proposed Hybrid Architecture
+
+```
+┌─────────────────────────────────────────┐
+│        Event-Sourced Beads              │
+├─────────────────────────────────────────┤
+│  Plugin Tools (beads_*)                 │
+│  └── Existing API preserved             │
+├─────────────────────────────────────────┤
+│  Event Store (swarm-mail)               │
+│  ├── 20 BeadEvent types                 │
+│  ├── Append-only log (local audit)      │
+│  └── NOT synced via git                 │
+├─────────────────────────────────────────┤
+│  Projections (swarm-mail pattern)       │
+│  ├── beads table (current state)        │
+│  ├── bead_dependencies table            │
+│  ├── blocked_beads_cache (derived)      │
+│  └── dirty_beads table (tracking)       │
+├─────────────────────────────────────────┤
+│  Git Sync (beads pattern)               │
+│  ├── JSONL export FROM PROJECTIONS      │
+│  ├── Reuse beads merge driver (MIT)     │
+│  └── Hash-based IDs                     │
+├─────────────────────────────────────────┤
+│  Effect-TS Primitives                   │
+│  ├── DurableCursor - Event replay       │
+│  └── DurableLock - Concurrent safety    │
+└─────────────────────────────────────────┘
+```
+
+**Key design decisions:**
+1. **Events stay local** - Not synced via git (too complex)
+2. **JSONL exports projections** - Same format as beads for merge driver compatibility
+3. **Hybrid model** - Events for audit/learning, projections for queries
+
+### Component Reuse Assessment
+
+#### From swarm-mail (75% reusable)
+
+| Component | Reuse | Notes |
+|-----------|-------|-------|
+| Event Store | 80% | Add bead event types |
+| Projection Pattern | 95% | Add new cases |
+| DatabaseAdapter | 100% | Perfect as-is |
+| DurableCursor | 90% | For replay/sync |
+| DurableLock | 90% | **Critical** for concurrent updates |
+| Migrations | 100% | Add bead tables |
+
+#### From steveyegge/beads (vendor/port)
+
+| Component | Action | License |
+|-----------|--------|---------|
+| Merge Driver | Vendor | MIT |
+| Hash ID Generator | Port to TS | MIT |
+| JSONL Schema | Adopt | MIT |
+| FlushManager Pattern | Port to TS | MIT |
+| Blocked Cache Logic | Port to TS | MIT |
+
+### Event Schema
+
+20 event types covering the full bead lifecycle:
+
+```typescript
+type BeadEvent =
+  // Lifecycle (6)
+  | BeadCreatedEvent
+  | BeadUpdatedEvent
+  | BeadStatusChangedEvent
+  | BeadClosedEvent
+  | BeadReopenedEvent
+  | BeadDeletedEvent
+  
+  // Dependencies (2)
+  | BeadDependencyAddedEvent
+  | BeadDependencyRemovedEvent
+  
+  // Labels (2)
+  | BeadLabelAddedEvent
+  | BeadLabelRemovedEvent
+  
+  // Comments (3)
+  | BeadCommentAddedEvent
+  | BeadCommentUpdatedEvent
+  | BeadCommentDeletedEvent
+  
+  // Epic (3)
+  | BeadEpicChildAddedEvent
+  | BeadEpicChildRemovedEvent
+  | BeadEpicClosureEligibleEvent
+  
+  // Swarm Integration (2)
+  | BeadAssignedEvent
+  | BeadWorkStartedEvent
+  
+  // Maintenance (1)
+  | BeadCompactedEvent
+```
+
+<Callout type="info">
+Event schemas are already implemented in `packages/opencode-swarm-plugin/src/schemas/bead-events.ts`
+</Callout>
+
+### Git Sync Strategy
+
+#### Export Flow
+
+```
+Event Appended
+    ↓
+updateMaterializedViews() [inline, same tx]
+    ↓
+Mark bead dirty
+    ↓
+FlushManager debounce (30s)
+    ↓
+Export dirty beads to JSONL
+    ↓
+Clear dirty flags
+    ↓
+Git hooks (optional auto-commit)
+```
+
+#### Import Flow
+
+```
+Git pull / merge
+    ↓
+Parse JSONL
+    ↓
+For each issue:
+  - Hash match? Skip
+  - ID exists? Update projection
+  - New ID? Insert projection
+    ↓
+Emit "bead_imported" events (audit)
+    ↓
+Rebuild blocked_beads_cache
+```
+
+### Risk Assessment
+
+| Risk | Likelihood | Impact | Mitigation |
+|------|------------|--------|------------|
+| Event store performance at scale | Low | Medium | Batched replay, indexes |
+| Merge conflicts in JSONL | Low | Low | Proven merge driver |
+| Projection drift from events | Medium | High | Checksums, replay |
+| Breaking existing beads_* tools | Medium | High | Adapter layer |
+
+### Implementation Plan
+
+| Phase | Duration | Deliverables |
+|-------|----------|--------------|
+| **Foundation** | Week 1 | Projections, dirty tracking, basic export |
+| **Git Sync** | Week 2 | Merge driver, import, FlushManager |
+| **Query Layer** | Week 3 | Ready work, blocked cache, cycle detection |
+| **Plugin Migration** | Week 4 | Migrate beads_* tools, compat layer |
+| **Polish** | Week 5-6 | Performance, error handling, migration tooling |
+
+### Alternatives Considered
+
+| Alternative | Why Rejected |
+|-------------|--------------|
+| **Pure Event Sourcing** | Merge conflicts nightmarish for events |
+| **Keep Separate Systems** | Duplicated infrastructure, no learning |
+| **Fork steveyegge/beads** | Different language, harder integration |
+
+### Conclusion
+
+**Recommendation: BUILD IT**
+
+The hybrid approach is sound:
+- **Low risk** - Proven patterns from both systems
+- **High value** - Unified infrastructure, learning integration
+- **Reasonable effort** - 4-6 weeks with 75% reuse
+- **Clear path** - Phased implementation, backward compatible
+
+---
+
+## Git Sync Deep Dive
+
+Detailed analysis of how steveyegge/beads achieves distributed sync via git.
+
+### JSONL Format
+
+One JSON object per line (snapshots, not events):
+
+```jsonl
+{"id":"bd-0134cc5a","title":"Fix auto-import","status":"closed","priority":0,...}
+{"id":"bd-af78.1","title":"Add auth","status":"open","priority":1,...}
+```
+
+**Why JSONL?**
+- Git-friendly (line-based diffs)
+- Merge-friendly (conflicts are rare)
+- Human-readable
+- Streamable
+
+### Incremental Export
+
+```sql
+CREATE TABLE dirty_issues (
+    issue_id TEXT PRIMARY KEY,
+    marked_at TIMESTAMP,
+    content_hash TEXT
+);
+```
+
+**Flow:**
+1. Mutation → `MarkIssueDirty(issueID)`
+2. FlushManager debounces (30s)
+3. Export dirty issues only
+4. Clear dirty flags
+
+### 3-Way Merge Driver
+
+Field-level merge rules:
+- **Timestamps:** Max value wins
+- **Dependencies:** Union of both sides
+- **Text fields:** Side with latest `updated_at` wins
+- **Tombstones:** Always win (unless expired)
+
+### Hash-Based IDs
+
+Content-based hash prevents collisions:
+
+```go
+h := sha256.New()
+h.Write([]byte(title))
+h.Write([]byte(description))
+h.Write([]byte(created.Format(time.RFC3339Nano)))
+h.Write([]byte(workspaceID))
+```
+
+Progressive length scaling: 6 chars → 7 → 8 on collision.
+
+| DB Size | 6-char collision | 7-char | 8-char |
+|---------|------------------|--------|--------|
+| 1,000   | 0.02%            | 0.00%  | 0.00%  |
+| 10,000  | 2.27%            | 0.06%  | 0.00%  |
+| 100,000 | 99.99%           | 6.24%  | 0.18%  |
+
+---
+
+## Research Methodology
+
+This research was conducted by a swarm of 5 parallel agents:
+
+1. **Architecture Analysis** - Deep dive into steveyegge/beads Go implementation
+2. **Infrastructure Mapping** - Assess swarm-mail reuse potential
+3. **Event Schema Design** - Draft Zod schemas for bead events
+4. **Git Sync Analysis** - Understand distributed coordination
+5. **Synthesis** - Consolidate findings into this EDR
+
+Tools used:
+- `repo-crawl_*` - GitHub API exploration
+- `repo-autopsy_*` - Deep code analysis
+- `semantic-memory_*` - Past learnings
+- `cass_search` - Cross-agent session history
+
+---
+
+## References
+
+- [steveyegge/beads](https://github.com/steveyegge/beads) - Original Go implementation
+- [Effect-TS](https://effect.website/) - TypeScript effect system
+- [PGLite](https://pglite.dev/) - Embedded PostgreSQL
+- [JSONL](https://jsonlines.org/) - JSON Lines format
