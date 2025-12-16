@@ -905,8 +905,345 @@ export class DecompositionError extends SwarmError {
   }
 }
 
+/**
+ * Planning phase state machine for Socratic planning
+ */
+type PlanningPhase = "questioning" | "alternatives" | "recommendation" | "ready";
+
+/**
+ * Planning mode that determines interaction level
+ */
+type PlanningMode = "socratic" | "fast" | "auto" | "confirm-only";
+
+/**
+ * Socratic planning output structure
+ */
+interface SocraticPlanOutput {
+  mode: PlanningMode;
+  phase: PlanningPhase;
+  questions?: Array<{ question: string; options?: string[] }>;
+  alternatives?: Array<{
+    name: string;
+    description: string;
+    tradeoffs: string;
+  }>;
+  recommendation?: { approach: string; reasoning: string };
+  memory_context?: string;
+  codebase_context?: {
+    git_status?: string;
+    relevant_files?: string[];
+  };
+  ready_to_decompose: boolean;
+  next_action?: string;
+}
+
+/**
+ * Interactive planning tool with Socratic questioning
+ *
+ * Implements a planning phase BEFORE decomposition that:
+ * 1. Gathers context (git, files, semantic memory)
+ * 2. Asks clarifying questions (socratic mode)
+ * 3. Explores alternatives with tradeoffs
+ * 4. Recommends an approach with reasoning
+ * 5. Confirms before proceeding to decomposition
+ *
+ * Modes:
+ * - socratic: Full interactive planning with questions, alternatives, recommendations
+ * - fast: Skip brainstorming, go straight to decomposition with memory context
+ * - auto: Auto-select best approach based on task keywords, minimal interaction
+ * - confirm-only: Show decomposition, wait for yes/no confirmation
+ *
+ * Based on the Socratic Planner Pattern from obra/superpowers.
+ *
+ * @see docs/analysis-socratic-planner-pattern.md
+ */
+export const swarm_plan_interactive = tool({
+  description:
+    "Interactive planning phase with Socratic questioning before decomposition. Supports multiple modes from full interactive to auto-proceed.",
+  args: {
+    task: tool.schema.string().min(1).describe("The task to plan"),
+    mode: tool.schema
+      .enum(["socratic", "fast", "auto", "confirm-only"])
+      .default("socratic")
+      .describe("Planning mode: socratic (full), fast (skip questions), auto (minimal), confirm-only (single yes/no)"),
+    context: tool.schema
+      .string()
+      .optional()
+      .describe("Optional additional context about the task"),
+    user_response: tool.schema
+      .string()
+      .optional()
+      .describe("User's response to a previous question (for multi-turn socratic mode)"),
+    phase: tool.schema
+      .enum(["questioning", "alternatives", "recommendation", "ready"])
+      .optional()
+      .describe("Current planning phase (for resuming multi-turn interaction)"),
+  },
+  async execute(args): Promise<string> {
+    // Import needed modules
+    const { selectStrategy, formatStrategyGuidelines, STRATEGIES } =
+      await import("./swarm-strategies");
+    const { formatMemoryQueryForDecomposition } = await import("./learning");
+
+    // Determine current phase
+    const currentPhase: PlanningPhase = args.phase || "questioning";
+    const mode: PlanningMode = args.mode || "socratic";
+
+    // Gather context - always do this regardless of mode
+    let memoryContext = "";
+    let codebaseContext: { git_status?: string; relevant_files?: string[] } = {};
+
+    // Generate semantic memory query instruction
+    // Note: Semantic memory is accessed via OpenCode's global tools, not as a direct import
+    // The coordinator should call semantic-memory_find before calling this tool
+    // and pass results in the context parameter
+    try {
+      const memoryQuery = formatMemoryQueryForDecomposition(args.task, 3);
+      memoryContext = `[Memory Query Instruction]\n${memoryQuery.instruction}\nQuery: "${memoryQuery.query}"\nLimit: ${memoryQuery.limit}`;
+    } catch (error) {
+      console.warn("[swarm_plan_interactive] Memory query formatting failed:", error);
+    }
+
+    // Get git context for codebase awareness
+    try {
+      const gitResult = await Bun.$`git status --short`.quiet().nothrow();
+      if (gitResult.exitCode === 0) {
+        codebaseContext.git_status = gitResult.stdout.toString().trim();
+      }
+    } catch (error) {
+      // Git not available or not in a git repo - continue without it
+    }
+
+    // Fast mode: Skip to recommendation
+    if (mode === "fast") {
+      const strategyResult = selectStrategy(args.task);
+      const guidelines = formatStrategyGuidelines(strategyResult.strategy);
+
+      const output: SocraticPlanOutput = {
+        mode: "fast",
+        phase: "ready",
+        recommendation: {
+          approach: strategyResult.strategy,
+          reasoning: `${strategyResult.reasoning}\n\n${guidelines}`,
+        },
+        memory_context: memoryContext || undefined,
+        codebase_context: Object.keys(codebaseContext).length > 0 ? codebaseContext : undefined,
+        ready_to_decompose: true,
+        next_action: "Proceed to swarm_decompose or swarm_delegate_planning",
+      };
+
+      return JSON.stringify(output, null, 2);
+    }
+
+    // Auto mode: Auto-select and proceed
+    if (mode === "auto") {
+      const strategyResult = selectStrategy(args.task);
+
+      const output: SocraticPlanOutput = {
+        mode: "auto",
+        phase: "ready",
+        recommendation: {
+          approach: strategyResult.strategy,
+          reasoning: `Auto-selected based on task keywords: ${strategyResult.reasoning}`,
+        },
+        memory_context: memoryContext || undefined,
+        codebase_context: Object.keys(codebaseContext).length > 0 ? codebaseContext : undefined,
+        ready_to_decompose: true,
+        next_action: "Auto-proceeding to decomposition",
+      };
+
+      return JSON.stringify(output, null, 2);
+    }
+
+    // Confirm-only mode: Generate decomposition, show it, wait for yes/no
+    if (mode === "confirm-only") {
+      // This mode will be handled by calling swarm_delegate_planning
+      // and then asking for confirmation on the result
+      const output: SocraticPlanOutput = {
+        mode: "confirm-only",
+        phase: "ready",
+        recommendation: {
+          approach: "Will generate decomposition for your review",
+          reasoning: "Use swarm_delegate_planning to generate the plan, then present it for yes/no confirmation",
+        },
+        memory_context: memoryContext || undefined,
+        codebase_context: Object.keys(codebaseContext).length > 0 ? codebaseContext : undefined,
+        ready_to_decompose: false,
+        next_action: "Call swarm_delegate_planning, then show result and ask for confirmation",
+      };
+
+      return JSON.stringify(output, null, 2);
+    }
+
+    // Socratic mode: Full interactive planning
+    // Phase 1: Questioning
+    if (currentPhase === "questioning") {
+      // Analyze task to identify what needs clarification
+      const taskLower = args.task.toLowerCase();
+      const questions: Array<{ question: string; options?: string[] }> = [];
+
+      // Check for vague task signals from skill
+      const isVague = {
+        noFiles: !taskLower.includes("src/") && !taskLower.includes("file"),
+        vagueVerb:
+          taskLower.includes("improve") ||
+          taskLower.includes("fix") ||
+          taskLower.includes("update") ||
+          taskLower.includes("make better"),
+        noSuccessCriteria: !taskLower.includes("test") && !taskLower.includes("verify"),
+      };
+
+      // Generate clarifying questions (one at a time)
+      if (isVague.noFiles) {
+        questions.push({
+          question: "Which part of the codebase should this change affect?",
+          options: [
+            "Core functionality (src/)",
+            "UI components (components/)",
+            "API routes (app/api/)",
+            "Configuration and tooling",
+            "Tests",
+          ],
+        });
+      } else if (isVague.vagueVerb) {
+        questions.push({
+          question: "What specific change are you looking for?",
+          options: [
+            "Add new functionality",
+            "Modify existing behavior",
+            "Remove/deprecate something",
+            "Refactor without behavior change",
+            "Fix a bug",
+          ],
+        });
+      } else if (isVague.noSuccessCriteria) {
+        questions.push({
+          question: "How will we know this task is complete?",
+          options: [
+            "All tests pass",
+            "Feature works as demonstrated",
+            "Code review approved",
+            "Documentation updated",
+            "Performance target met",
+          ],
+        });
+      }
+
+      // If task seems clear, move to alternatives phase
+      if (questions.length === 0) {
+        const output: SocraticPlanOutput = {
+          mode: "socratic",
+          phase: "alternatives",
+          memory_context: memoryContext || undefined,
+          codebase_context: Object.keys(codebaseContext).length > 0 ? codebaseContext : undefined,
+          ready_to_decompose: false,
+          next_action: "Task is clear. Call again with phase=alternatives to explore approaches",
+        };
+        return JSON.stringify(output, null, 2);
+      }
+
+      // Return first question only (Socratic principle: one at a time)
+      const output: SocraticPlanOutput = {
+        mode: "socratic",
+        phase: "questioning",
+        questions: [questions[0]],
+        memory_context: memoryContext || undefined,
+        codebase_context: Object.keys(codebaseContext).length > 0 ? codebaseContext : undefined,
+        ready_to_decompose: false,
+        next_action: "User should answer this question, then call again with user_response",
+      };
+
+      return JSON.stringify(output, null, 2);
+    }
+
+    // Phase 2: Alternatives
+    if (currentPhase === "alternatives") {
+      const strategyResult = selectStrategy(args.task);
+
+      // Build 2-3 alternative approaches
+      const alternatives: Array<{
+        name: string;
+        description: string;
+        tradeoffs: string;
+      }> = [];
+
+      // Primary recommendation
+      alternatives.push({
+        name: strategyResult.strategy,
+        description: strategyResult.reasoning,
+        tradeoffs: `Confidence: ${(strategyResult.confidence * 100).toFixed(0)}%. ${STRATEGIES[strategyResult.strategy].description}`,
+      });
+
+      // Add top 2 alternatives
+      for (let i = 0; i < Math.min(2, strategyResult.alternatives.length); i++) {
+        const alt = strategyResult.alternatives[i];
+        alternatives.push({
+          name: alt.strategy,
+          description: STRATEGIES[alt.strategy].description,
+          tradeoffs: `Match score: ${alt.score}. ${STRATEGIES[alt.strategy].antiPatterns[0] || "Consider trade-offs carefully"}`,
+        });
+      }
+
+      const output: SocraticPlanOutput = {
+        mode: "socratic",
+        phase: "alternatives",
+        alternatives,
+        memory_context: memoryContext || undefined,
+        codebase_context: Object.keys(codebaseContext).length > 0 ? codebaseContext : undefined,
+        ready_to_decompose: false,
+        next_action: "User should choose an approach, then call again with phase=recommendation",
+      };
+
+      return JSON.stringify(output, null, 2);
+    }
+
+    // Phase 3: Recommendation
+    if (currentPhase === "recommendation") {
+      const strategyResult = selectStrategy(args.task);
+      const guidelines = formatStrategyGuidelines(strategyResult.strategy);
+
+      const output: SocraticPlanOutput = {
+        mode: "socratic",
+        phase: "recommendation",
+        recommendation: {
+          approach: strategyResult.strategy,
+          reasoning: `Based on your input and task analysis:\n\n${strategyResult.reasoning}\n\n${guidelines}`,
+        },
+        memory_context: memoryContext || undefined,
+        codebase_context: Object.keys(codebaseContext).length > 0 ? codebaseContext : undefined,
+        ready_to_decompose: false,
+        next_action: "User should confirm to proceed. Then call again with phase=ready",
+      };
+
+      return JSON.stringify(output, null, 2);
+    }
+
+    // Phase 4: Ready
+    if (currentPhase === "ready") {
+      const output: SocraticPlanOutput = {
+        mode: "socratic",
+        phase: "ready",
+        recommendation: {
+          approach: "Confirmed by user",
+          reasoning: "Ready to proceed with decomposition",
+        },
+        memory_context: memoryContext || undefined,
+        codebase_context: Object.keys(codebaseContext).length > 0 ? codebaseContext : undefined,
+        ready_to_decompose: true,
+        next_action: "Proceed to swarm_decompose or swarm_delegate_planning",
+      };
+
+      return JSON.stringify(output, null, 2);
+    }
+
+    // Should never reach here
+    throw new Error(`Invalid planning phase: ${currentPhase}`);
+  },
+});
+
 export const decomposeTools = {
   swarm_decompose,
   swarm_validate_decomposition,
   swarm_delegate_planning,
+  swarm_plan_interactive,
 };

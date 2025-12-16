@@ -10,10 +10,29 @@ $ARGUMENTS
 
 ## Flags (parse from task above)
 
+### Planning Modes
+
+- `--fast` - Skip brainstorming, go straight to decomposition
+- `--auto` - Use best recommendations, minimal questions  
+- `--confirm-only` - Show decomposition, single yes/no, then execute
+- (default) - Full Socratic planning with questions and alternatives
+
+### Workflow Options
+
 - `--to-main` - Push directly to main, skip PR
 - `--no-sync` - Skip mid-task context sharing
 
-**Default: Feature branch + PR with context sync.**
+**Defaults: Socratic planning, feature branch + PR, context sync enabled.**
+
+### Example Usage
+
+```bash
+/swarm "task description"              # Full Socratic (default)
+/swarm --fast "task description"       # Skip brainstorming
+/swarm --auto "task description"       # Auto-select, minimal Q&A
+/swarm --confirm-only "task"           # Show plan, yes/no only
+/swarm --fast --to-main "quick fix"    # Fast mode + push to main
+```
 
 ## MANDATORY: Swarm Mail
 
@@ -126,11 +145,61 @@ git checkout -b swarm/<short-task-name>
 git push -u origin HEAD
 ```
 
-### 4. Decompose Task (DELEGATE TO SUBAGENT)
+### 4. Interactive Planning (MANDATORY)
+
+**Parse planning mode from flags:**
+
+- `--fast` → mode="fast"
+- `--auto` → mode="auto"
+- `--confirm-only` → mode="confirm-only"
+- No flag → mode="socratic" (default)
+
+**Use swarm_plan_interactive for ALL planning:**
+
+```bash
+# Start interactive planning session
+swarm_plan_interactive(
+  task="<task description>",
+  mode="socratic",  # or "fast", "auto", "confirm-only"
+  context="<synthesized knowledge from step 2>",
+  max_subtasks=5
+)
+```
+
+**Multi-turn conversation flow:**
+
+The tool returns:
+
+```json
+{
+  "ready_to_decompose": false,  // or true when planning complete
+  "follow_up": "What approach do you prefer: A) file-based or B) feature-based?",
+  "options": ["A) File-based...", "B) Feature-based..."],
+  "recommendation": "I recommend A because..."
+}
+```
+
+**Continue conversation until ready_to_decompose=true:**
+
+```bash
+# User responds to follow-up question
+# You call swarm_plan_interactive again with:
+swarm_plan_interactive(
+  task="<same task>",
+  mode="socratic",
+  context="<synthesized knowledge>",
+  user_response="A - file-based approach"
+)
+
+# Repeat until ready_to_decompose=true
+# Then tool returns final decomposition prompt
+```
+
+**When ready_to_decompose=true:**
 
 > **⚠️ CRITICAL: Context Preservation**
 >
-> **DO NOT decompose inline in the coordinator thread.** This consumes massive context with file reading, CASS queries, and reasoning. You will hit context limits on long swarms.
+> **DO NOT decompose inline in the coordinator thread.** This consumes massive context with file reading, CASS queries, and reasoning.
 >
 > **ALWAYS delegate to a `swarm/planner` subagent** that returns only the validated BeadTree JSON.
 
@@ -138,11 +207,8 @@ git push -u origin HEAD
 
 ```bash
 # This pollutes your main thread context
-swarm_select_strategy(task="<the task>")
-swarm_plan_prompt(task="<the task>", ...)
 # ... you reason about decomposition inline ...
 # ... context fills with file contents, analysis ...
-swarm_validate_decomposition(response="...")
 ```
 
 **✅ Do this (delegate to subagent):**
@@ -151,36 +217,42 @@ swarm_validate_decomposition(response="...")
 # 1. Create planning bead
 beads_create(title="Plan: <task>", type="task", description="Decompose into subtasks")
 
-# 2. Delegate to swarm/planner subagent
+# 2. Get final prompt from swarm_plan_interactive (when ready_to_decompose=true)
+# final_prompt = <from last swarm_plan_interactive call>
+
+# 3. Delegate to swarm/planner subagent
 Task(
   subagent_type="swarm/planner",
   description="Decompose task: <task>",
   prompt="
 You are a swarm planner. Generate a BeadTree for this task.
 
-## Task
-<task description>
-
-## Synthesized Context
-<from knowledge gathering step 2>
+<final_prompt from swarm_plan_interactive>
 
 ## Instructions
-1. Use swarm_select_strategy(task=\"...\")
-2. Use swarm_plan_prompt(task=\"...\", max_subtasks=5, query_cass=true)
-3. Reason about decomposition strategy
-4. Generate BeadTree JSON
-5. Validate with swarm_validate_decomposition
-6. Return ONLY the validated BeadTree JSON (no analysis)
+1. Reason about decomposition strategy
+2. Generate BeadTree JSON
+3. Validate with swarm_validate_decomposition
+4. Return ONLY the validated BeadTree JSON (no analysis)
 
 Output: Valid BeadTree JSON only.
   "
 )
 
-# 3. Subagent returns validated JSON, parse it
+# 4. Subagent returns validated JSON, parse it
 # beadTree = <result from subagent>
 ```
 
-**Why?**
+**Planning Mode Behavior:**
+
+| Mode            | Questions | User Input | Confirmation |
+| --------------- | --------- | ---------- | ------------ |
+| `socratic`      | Multiple  | Yes        | Yes          |
+| `fast`          | None      | No         | Yes          |
+| `auto`          | Minimal   | Rare       | No           |
+| `confirm-only`  | None      | Yes (1x)   | Yes (1x)     |
+
+**Why delegate?**
 
 - Main thread stays clean (only receives final JSON)
 - Subagent context is disposable (garbage collected after planning)

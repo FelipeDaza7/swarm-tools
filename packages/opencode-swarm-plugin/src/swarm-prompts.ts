@@ -273,13 +273,11 @@ Only modify these files. Need others? Message the coordinator.
 
 {error_context}
 
-## [MANDATORY: SWARM MAIL INITIALIZATION]
+## [MANDATORY SURVIVAL CHECKLIST]
 
-**CRITICAL: YOU MUST INITIALIZE SWARM MAIL BEFORE DOING ANY WORK.**
+**CRITICAL: Follow this checklist IN ORDER. Each step builds on the previous.**
 
-This is your FIRST step - before reading files, before planning, before ANY other action.
-
-### Step 1: Initialize (REQUIRED - DO THIS FIRST)
+### Step 1: Initialize Coordination (REQUIRED - DO THIS FIRST)
 \`\`\`
 swarmmail_init(project_path="{project_path}", task_description="{bead_id}: {subtask_title}")
 \`\`\`
@@ -292,24 +290,122 @@ swarmmail_init(project_path="{project_path}", task_description="{bead_id}: {subt
 
 **If you skip this step, your work will not be tracked and swarm_complete will fail.**
 
-## [SWARM MAIL USAGE]
+### Step 2: Query Past Learnings (BEFORE starting work)
+\`\`\`
+semantic-memory_find(query="<keywords from your task>", limit=5)
+\`\`\`
 
-After initialization, use Swarm Mail for coordination:
+**Check if past agents solved similar problems.** Search for:
+- Error messages if debugging
+- Domain concepts (e.g., "authentication", "caching")
+- Technology stack (e.g., "Next.js", "React")
+- Patterns (e.g., "event sourcing", "validation")
+
+**Past learnings save time and prevent repeating mistakes.**
+
+### Step 3: Load Relevant Skills (if available)
+\`\`\`
+skills_list()  # See what skills exist
+skills_use(name="<relevant-skill>", context="<your task>")  # Load skill
+\`\`\`
+
+**Common skill triggers:**
+- Writing tests? → \`skills_use(name="testing-patterns")\`
+- Breaking dependencies? → \`skills_use(name="testing-patterns")\`
+- Multi-agent coordination? → \`skills_use(name="swarm-coordination")\`
+- Building a CLI? → \`skills_use(name="cli-builder")\`
+
+### Step 4: Reserve Your Files (YOU reserve, not coordinator)
+\`\`\`
+swarmmail_reserve(
+  paths=[{file_list}],
+  reason="{bead_id}: {subtask_title}",
+  exclusive=true
+)
+\`\`\`
+
+**Workers reserve their own files.** This prevents edit conflicts with other agents.
+
+### Step 5: Do the Work
+- Read your assigned files
+- Implement changes
+- Verify (typecheck if applicable)
+
+### Step 6: Report Progress at Milestones
+\`\`\`
+swarm_progress(
+  project_key="{project_path}",
+  agent_name="<your-agent-name>",
+  bead_id="{bead_id}",
+  status="in_progress",
+  progress_percent=25,  # or 50, 75
+  message="<what you just completed>"
+)
+\`\`\`
+
+**Report at 25%, 50%, 75% completion.** This:
+- Triggers auto-checkpoint (saves context)
+- Keeps coordinator informed
+- Prevents silent failures
+
+### Step 7: Manual Checkpoint BEFORE Risky Operations
+\`\`\`
+swarm_checkpoint(
+  project_key="{project_path}",
+  agent_name="<your-agent-name>",
+  bead_id="{bead_id}"
+)
+\`\`\`
+
+**Call BEFORE:**
+- Large refactors
+- File deletions
+- Breaking API changes
+- Anything that might fail catastrophically
+
+**Checkpoints preserve context so you can recover if things go wrong.**
+
+### Step 8: Store Learnings (if you discovered something)
+\`\`\`
+semantic-memory_store(
+  information="<what you learned, WHY it matters, how to apply it>",
+  metadata="<tags: domain, tech-stack, pattern-type>"
+)
+\`\`\`
+
+**Store:**
+- Tricky bugs you solved (root cause + solution)
+- Project-specific patterns or domain rules
+- Tool/library gotchas and workarounds
+- Failed approaches (anti-patterns to avoid)
+
+**Don't store generic knowledge.** Store the WHY, not just the WHAT.
+
+### Step 9: Complete (REQUIRED - releases reservations)
+\`\`\`
+swarm_complete(
+  project_key="{project_path}",
+  agent_name="<your-agent-name>",
+  bead_id="{bead_id}",
+  summary="<what you accomplished>",
+  files_touched=["list", "of", "files"]
+)
+\`\`\`
+
+**This automatically:**
+- Runs UBS bug scan
+- Releases file reservations
+- Records learning signals
+- Notifies coordinator
+
+**DO NOT manually close the bead with beads_close.** Use swarm_complete.
+
+## [SWARM MAIL COMMUNICATION]
 
 ### Check Inbox Regularly
 \`\`\`
 swarmmail_inbox()  # Check for coordinator messages
 swarmmail_read_message(message_id=N)  # Read specific message
-\`\`\`
-
-### Report Progress (REQUIRED - don't work silently)
-\`\`\`
-swarmmail_send(
-  to=["coordinator"],
-  subject="Progress: {bead_id}",
-  body="<what you did, blockers, questions>",
-  thread_id="{epic_id}"
-)
 \`\`\`
 
 ### When Blocked
@@ -324,42 +420,48 @@ swarmmail_send(
 beads_update(id="{bead_id}", status="blocked")
 \`\`\`
 
-### Release Files When Done
+### Report Issues to Other Agents
 \`\`\`
-swarmmail_release()  # Or let swarm_complete handle it
+swarmmail_send(
+  to=["OtherAgent", "coordinator"],
+  subject="Issue in {bead_id}",
+  body="<describe problem, don't fix their code>",
+  thread_id="{epic_id}"
+)
 \`\`\`
+
+### Manual Release (if needed)
+\`\`\`
+swarmmail_release()  # Manually release reservations
+\`\`\`
+
+**Note:** \`swarm_complete\` automatically releases reservations. Only use manual release if aborting work.
 
 ## [OTHER TOOLS]
 ### Beads
 - beads_update(id, status) - Mark blocked if stuck
 - beads_create(title, type) - Log new bugs found
 
-### Skills (if available)
+### Skills
 - skills_list() - Discover available skills
 - skills_use(name) - Activate skill for specialized guidance
+- skills_create(name) - Create new skill (if you found a reusable pattern)
 
-### Completion (REQUIRED)
-- swarm_complete(project_key, agent_name, bead_id, summary, files_touched)
+## [CRITICAL REQUIREMENTS]
 
-## [LEARNING]
-As you work, note reusable patterns, best practices, or domain insights:
-- If you discover something that would help future agents, consider creating a skill
-- Use skills_create to codify patterns for the project
-- Good skills have clear "when to use" descriptions with actionable instructions
-- Skills make swarms smarter over time
+**NON-NEGOTIABLE:**
+1. Step 1 (swarmmail_init) MUST be first - do it before anything else
+2. Step 2 (semantic-memory_find) MUST happen before starting work
+3. Step 4 (swarmmail_reserve) - YOU reserve files, not coordinator
+4. Step 6 (swarm_progress) - Report at milestones, don't work silently
+5. Step 9 (swarm_complete) - Use this to close, NOT beads_close
 
-## [WORKFLOW]
-1. **swarmmail_init** - Initialize session (MANDATORY FIRST STEP)
-2. Read assigned files
-3. Implement changes
-4. **swarmmail_send** - Report progress to coordinator
-5. Verify (typecheck)
-6. **swarm_complete** - Mark done, release reservations
-
-**CRITICAL REQUIREMENTS:**
-- Step 1 (swarmmail_init) is NON-NEGOTIABLE - do it before anything else
-- Never work silently - send progress updates via swarmmail_send every significant milestone
-- If you complete without initializing, swarm_complete will detect this and warn/fail
+**If you skip these steps:**
+- Your work won't be tracked (swarm_complete will fail)
+- You'll waste time repeating solved problems (no semantic memory query)
+- Edit conflicts with other agents (no file reservation)
+- Lost work if you crash (no checkpoints)
+- Future agents repeat your mistakes (no learnings stored)
 
 Begin now.`;
 

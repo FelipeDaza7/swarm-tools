@@ -63,6 +63,86 @@ Swarm Mail is embedded (no external server needed) and provides:
 
 **Heuristic:** If you can describe the task in one sentence without "and", don't swarm.
 
+## Worker Survival Checklist (MANDATORY)
+
+Every swarm worker MUST follow these 9 steps. No exceptions.
+
+```typescript
+// 1. INITIALIZE - Register with Swarm Mail
+swarmmail_init({
+  project_path: "/abs/path/to/project",
+  task_description: "bead-id: Task description"
+});
+
+// 2. QUERY LEARNINGS - Check what past agents learned
+semantic_memory_find({
+  query: "task keywords domain",
+  limit: 5
+});
+
+// 3. LOAD SKILLS - Get domain expertise
+skills_list();
+skills_use({ name: "relevant-skill" });
+
+// 4. RESERVE FILES - Claim exclusive ownership
+swarmmail_reserve({
+  paths: ["src/assigned/**"],
+  reason: "bead-id: What I'm working on",
+  ttl_seconds: 3600
+});
+
+// 5. DO WORK
+// ... implement changes ...
+
+// 6. REPORT PROGRESS - Every 30min or at milestones
+swarm_progress({
+  project_key: "/abs/path/to/project",
+  agent_name: "WorkerName",
+  bead_id: "bd-123.4",
+  status: "in_progress",
+  message: "Auth service 80% complete, testing remaining",
+  progress_percent: 80
+});
+
+// 7. CHECKPOINT - Before risky operations
+swarm_checkpoint({
+  bead_id: "bd-123.4",
+  checkpoint_name: "pre-refactor",
+  reason: "About to refactor auth flow"
+});
+
+// 8. STORE LEARNINGS - Capture what you discovered
+semantic_memory_store({
+  information: "OAuth refresh tokens need 5min buffer...",
+  metadata: "auth, oauth, tokens"
+});
+
+// 9. COMPLETE - Auto-releases, runs UBS, records outcome
+swarm_complete({
+  project_key: "/abs/path/to/project",
+  agent_name: "WorkerName",
+  bead_id: "bd-123.4",
+  summary: "Auth service implemented with JWT",
+  files_touched: ["src/auth/service.ts", "src/auth/schema.ts"]
+});
+```
+
+**Why These Steps Matter:**
+
+| Step | Purpose | Consequence of Skipping |
+|------|---------|-------------------------|
+| 1. Init | Register identity, enable coordination | Can't send messages, reservations fail |
+| 2. Query | Learn from past mistakes | Repeat solved problems, waste time |
+| 3. Skills | Load domain expertise | Miss known patterns, lower quality |
+| 4. Reserve | Prevent edit conflicts | Merge conflicts, lost work |
+| 5. Work | Actually do the task | N/A |
+| 6. Progress | Keep coordinator informed | Coordinator assumes stuck, may reassign |
+| 7. Checkpoint | Safe rollback point | Can't recover from failures |
+| 8. Store | Help future agents | Same bugs recur, no learning |
+| 9. Complete | Clean release, learning signal | Reservations leak, no outcome tracking |
+
+**If your subtask prompt doesn't include these steps, something is wrong with the coordinator.**
+
 ## Task Clarity Check (BEFORE Decomposing)
 
 **Before decomposing, ask: Is this task clear enough to parallelize?**
@@ -111,6 +191,86 @@ I'd recommend (a) because [reason]. Which approach?
 **When in doubt, ask.** A 30-second clarification beats a 30-minute wrong decomposition.
 
 ## Coordinator Workflow
+
+### Phase 0: Socratic Planning (NEW - INTERACTIVE)
+
+**Before decomposing, engage with the user to clarify the task.**
+
+Swarm supports three interaction modes:
+
+| Mode | Flag | Behavior |
+|------|------|----------|
+| **Full Socratic** | (default) | Ask questions, offer recommendations, collaborative planning |
+| **Fast** | `--fast` | Skip questions, proceed with reasonable defaults |
+| **Auto** | `--auto` | Minimal interaction, use heuristics for all decisions |
+| **Confirm Only** | `--confirm-only` | Show plan, get yes/no, no discussion |
+
+**Default Flow (Full Socratic):**
+
+```typescript
+// 1. Analyze task for clarity
+const signals = analyzeTaskClarity(task);
+
+if (signals.needsClarification) {
+  // 2. Ask ONE question at a time
+  const question = generateClarifyingQuestion(signals);
+  
+  // 3. Offer 2-3 concrete options
+  const options = generateOptions(signals);
+  
+  // 4. Lead with recommendation
+  const recommendation = selectRecommendation(options);
+  
+  // 5. Present to user
+  console.log(`
+The task "${task}" needs clarification before I can decompose it.
+
+**Question:** ${question}
+
+Options:
+a) ${options[0].description} - ${options[0].tradeoff}
+b) ${options[1].description} - ${options[1].tradeoff}
+c) ${options[2].description} - ${options[2].tradeoff}
+
+I'd recommend (${recommendation.letter}) because ${recommendation.reason}. Which approach?
+  `);
+  
+  // 6. Wait for answer, iterate if needed
+  const answer = await getUserResponse();
+  
+  // 7. Ask next question if needed (ONE at a time)
+  if (needsMoreClarification(answer)) {
+    // Repeat with next question
+  }
+}
+
+// 8. Proceed to decomposition once clear
+```
+
+**Fast Mode (`--fast`):**
+
+- Skip all questions
+- Use reasonable defaults based on task type
+- Proceed directly to decomposition
+
+**Auto Mode (`--auto`):**
+
+- Zero interaction
+- Heuristic-based decisions for all choices
+- Use for batch processing or CI
+
+**Confirm Only (`--confirm-only`):**
+
+- Generate plan silently
+- Show final BeadTree
+- Get yes/no only
+
+**Rules for Socratic Mode:**
+
+- **ONE question at a time** - don't overwhelm
+- **Offer concrete options** - not open-ended
+- **Lead with recommendation** - save user cognitive load
+- **Wait for answer** - don't proceed with assumptions
 
 ### Phase 1: Initialize Swarm Mail (FIRST)
 
@@ -212,23 +372,54 @@ await beads_create_epic({
 - **Scales to long swarms** - coordinator can manage 10+ workers without exhaustion
 - **Faster coordination** - less context = faster responses when monitoring workers
 
-### Phase 4: Reserve Files (via Swarm Mail)
+### Phase 4: File Ownership (CRITICAL RULE)
+
+**⚠️ COORDINATORS NEVER RESERVE FILES**
+
+This is a hard rule. Here's why:
 
 ```typescript
-// Reserve files for each subtask BEFORE spawning workers
-await swarmmail_reserve({
+// ❌ WRONG - Coordinator reserving files
+swarmmail_reserve({
   paths: ["src/auth/**"],
-  reason: "bd-123: Auth service implementation",
-  ttl_seconds: 3600,
-  exclusive: true,
+  reason: "bd-123: Auth service implementation"
 });
+// Then spawns worker... who owns the files?
+
+// ✅ CORRECT - Worker reserves their own files
+// Coordinator includes file list in worker prompt
+const prompt = swarm_spawn_subtask({
+  bead_id: "bd-123.4",
+  files: ["src/auth/**"],  // Files listed here
+  // ...
+});
+
+// Worker receives prompt with file list
+// Worker calls swarmmail_reserve themselves
 ```
 
-**Rules:**
+**Why This Pattern:**
 
-- No file overlap between subtasks
-- Coordinator mediates conflicts
-- `swarm_complete` auto-releases
+| Coordinator Reserves | Worker Reserves |
+|---------------------|-----------------|
+| Ownership confusion | Clear ownership |
+| Who releases? | Worker releases via `swarm_complete` |
+| Coordinator must track | Worker manages lifecycle |
+| Deadlock risk | Clean handoff |
+
+**Coordinator Responsibilities:**
+
+1. **Plan** which files each worker needs (no overlap)
+2. **Include** file list in worker prompt
+3. **Mediate** conflicts if workers request different files
+4. **Never** call `swarmmail_reserve` themselves
+
+**Worker Responsibilities:**
+
+1. **Read** assigned files from prompt
+2. **Reserve** those files (step 4 of survival checklist)
+3. **Work** exclusively on reserved files
+4. **Release** via `swarm_complete` (automatic)
 
 ### Phase 5: Spawn Workers
 
@@ -285,6 +476,185 @@ await swarm_complete({
 await swarmmail_release(); // Release any remaining reservations
 await beads_sync();
 ```
+
+## Context Survival Patterns (CRITICAL)
+
+Long-running swarms exhaust context windows. These patterns keep you alive.
+
+### Pattern 1: Query Memory Before Starting
+
+**Problem:** Repeating solved problems wastes tokens on rediscovery.
+
+**Solution:** Query semantic memory FIRST.
+
+```typescript
+// At swarm start (coordinator)
+const learnings = await semantic_memory_find({
+  query: "auth oauth tokens",
+  limit: 5
+});
+
+// Include in shared_context for workers
+const shared_context = `
+## Past Learnings
+${learnings.map(l => `- ${l.information}`).join('\n')}
+`;
+
+// At worker start (survival checklist step 2)
+const relevantLearnings = await semantic_memory_find({
+  query: "task-specific keywords",
+  limit: 3
+});
+```
+
+**Why:** 5 learnings (~2k tokens) prevent rediscovering solutions (~20k tokens of trial-and-error).
+
+### Pattern 2: Checkpoint Before Risky Operations
+
+**Problem:** Failed experiments consume context without producing value.
+
+**Solution:** Checkpoint before risky changes.
+
+```typescript
+// Before refactoring
+await swarm_checkpoint({
+  bead_id: "bd-123.4",
+  checkpoint_name: "pre-refactor",
+  reason: "About to change auth flow structure"
+});
+
+// Try risky change...
+
+// If it fails, restore and try different approach
+await swarm_restore_checkpoint({
+  bead_id: "bd-123.4",
+  checkpoint_name: "pre-refactor"
+});
+```
+
+**When to Checkpoint:**
+
+| Operation | Risk | Checkpoint? |
+|-----------|------|-------------|
+| Add new file | Low | No |
+| Refactor across files | High | Yes |
+| Change API contract | High | Yes |
+| Update dependencies | Medium | Yes |
+| Fix typo | Low | No |
+| Rewrite algorithm | High | Yes |
+
+### Pattern 3: Store Learnings Immediately
+
+**Problem:** Discoveries get lost in context churn.
+
+**Solution:** Store learnings as soon as you discover them.
+
+```typescript
+// ❌ WRONG - Wait until end
+// ... debug for 30 minutes ...
+// ... find root cause ...
+// ... keep working ...
+// ... forget to store learning ...
+
+// ✅ CORRECT - Store immediately when discovered
+// ... debug for 30 minutes ...
+// ... find root cause ...
+await semantic_memory_store({
+  information: "OAuth refresh tokens need 5min buffer to avoid race conditions. Without buffer, token refresh can fail mid-request if expiry happens between check and use.",
+  metadata: "auth, oauth, tokens, race-conditions"
+});
+// ... continue working with peace of mind ...
+```
+
+**Trigger:** Store a learning whenever you say "Aha!" or "That's why!".
+
+### Pattern 4: Progress Reports Trigger Auto-Checkpoints
+
+**Problem:** Workers forget to checkpoint manually.
+
+**Solution:** `swarm_progress` auto-checkpoints at milestones.
+
+```typescript
+// Report progress at 25%, 50%, 75%
+await swarm_progress({
+  project_key: "/abs/path",
+  agent_name: "WorkerName",
+  bead_id: "bd-123.4",
+  status: "in_progress",
+  progress_percent: 50,  // Auto-checkpoint triggered
+  message: "Auth service half complete"
+});
+```
+
+**Auto-checkpoint thresholds:** 25%, 50%, 75%, 100% (completion).
+
+### Pattern 5: Delegate Heavy Research to Subagents
+
+**Problem:** Reading 10+ files or doing deep CASS searches pollutes main thread.
+
+**Solution:** Subagent researches, returns summary only.
+
+```typescript
+// ❌ WRONG - Coordinator reads files inline
+const file1 = await read("src/a.ts");  // 500 lines
+const file2 = await read("src/b.ts");  // 600 lines
+const file3 = await read("src/c.ts");  // 400 lines
+// ... context now +1500 lines ...
+
+// ✅ CORRECT - Subagent reads, summarizes
+const summary = await Task({
+  subagent_type: "explore",
+  prompt: "Read src/a.ts, src/b.ts, src/c.ts. Summarize the auth flow in 3 bullet points."
+});
+// ... context +3 bullets, subagent context disposed ...
+```
+
+**When to Delegate:**
+
+- Reading >3 files
+- Multiple CASS searches
+- Deep file tree exploration
+- Analyzing large logs
+
+### Pattern 6: Use Summaries Over Raw Data
+
+**Problem:** Full inboxes, file contents, search results exhaust tokens.
+
+**Solution:** Summaries and previews only.
+
+```typescript
+// ❌ WRONG - Fetch all message bodies
+const inbox = await swarmmail_inbox({ include_bodies: true });
+
+// ✅ CORRECT - Headers only, read specific messages
+const inbox = await swarmmail_inbox({ limit: 5 });  // Headers only
+if (inbox.urgent.length > 0) {
+  const msg = await swarmmail_read_message({ message_id: inbox.urgent[0].id });
+}
+
+// ✅ BETTER - Summarize threads
+const summary = await swarmmail_summarize_thread({ thread_id: "bd-123" });
+```
+
+**Token Budget:**
+
+| Approach | Tokens |
+|----------|--------|
+| 10 full messages | ~5k |
+| 10 message headers | ~500 |
+| Thread summary | ~200 |
+
+### Context Survival Checklist
+
+- [ ] Query semantic memory at start
+- [ ] Checkpoint before risky operations
+- [ ] Store learnings immediately when discovered
+- [ ] Use `swarm_progress` for auto-checkpoints
+- [ ] Delegate heavy research to subagents
+- [ ] Use summaries over raw data
+- [ ] Monitor token usage (stay under 150k)
+
+**If you're past 150k tokens, you've already lost. These patterns keep you alive.**
 
 ## Decomposition Strategies
 

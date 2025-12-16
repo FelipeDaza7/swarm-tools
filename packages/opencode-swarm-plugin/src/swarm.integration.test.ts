@@ -221,15 +221,18 @@ describe("swarm_select_strategy", () => {
 
     expect(parsed).toHaveProperty("alternatives");
     expect(parsed.alternatives).toBeInstanceOf(Array);
-    expect(parsed.alternatives.length).toBe(2); // 3 strategies - 1 selected = 2 alternatives
+    expect(parsed.alternatives.length).toBe(3); // 4 strategies - 1 selected = 3 alternatives
 
     for (const alt of parsed.alternatives) {
       expect(alt).toHaveProperty("strategy");
       expect(alt).toHaveProperty("description");
       expect(alt).toHaveProperty("score");
-      expect(["file-based", "feature-based", "risk-based"]).toContain(
-        alt.strategy,
-      );
+      expect([
+        "file-based",
+        "feature-based",
+        "risk-based",
+        "research-based",
+      ]).toContain(alt.strategy);
       expect(typeof alt.score).toBe("number");
     }
   });
@@ -340,38 +343,30 @@ describe("swarm_plan_prompt", () => {
     expect(parsed.schema_hint).toHaveProperty("subtasks");
   });
 
-  it("reports CASS status in output (queried flag)", async () => {
-    // Test with CASS disabled
-    const resultDisabled = await swarm_plan_prompt.execute(
+  it("includes strategy and skills info in output", async () => {
+    // Test swarm_plan_prompt output structure
+    const result = await swarm_plan_prompt.execute(
       {
         task: "Add feature",
         max_subtasks: 3,
-        query_cass: false,
       },
       mockContext,
     );
-    const parsedDisabled = JSON.parse(resultDisabled);
+    const parsed = JSON.parse(result);
 
-    expect(parsedDisabled).toHaveProperty("cass_history");
-    expect(parsedDisabled.cass_history.queried).toBe(false);
+    // Should have strategy info
+    expect(parsed).toHaveProperty("strategy");
+    expect(parsed.strategy).toHaveProperty("selected");
+    expect(parsed.strategy).toHaveProperty("reasoning");
+    expect(parsed.strategy).toHaveProperty("guidelines");
+    expect(parsed.strategy).toHaveProperty("anti_patterns");
 
-    // Test with CASS enabled (may or may not be available)
-    const resultEnabled = await swarm_plan_prompt.execute(
-      {
-        task: "Add feature",
-        max_subtasks: 3,
-        query_cass: true,
-      },
-      mockContext,
-    );
-    const parsedEnabled = JSON.parse(resultEnabled);
+    // Should have skills info
+    expect(parsed).toHaveProperty("skills");
+    expect(parsed.skills).toHaveProperty("included");
 
-    expect(parsedEnabled).toHaveProperty("cass_history");
-    expect(parsedEnabled.cass_history).toHaveProperty("queried");
-    // If CASS is unavailable, queried will be false with reason
-    if (!parsedEnabled.cass_history.queried) {
-      expect(parsedEnabled.cass_history).toHaveProperty("reason");
-    }
+    // Should have memory query instruction
+    expect(parsed).toHaveProperty("memory_query");
   });
 
   it("includes context in prompt when provided", async () => {
@@ -1090,11 +1085,12 @@ describe("Tool Availability", () => {
 
   it("checks all tools at once", async () => {
     const availability = await checkAllTools();
-    expect(availability.size).toBe(5);
+    expect(availability.size).toBe(6); // semantic-memory, cass, ubs, beads, swarm-mail, agent-mail
     expect(availability.has("semantic-memory")).toBe(true);
     expect(availability.has("cass")).toBe(true);
     expect(availability.has("ubs")).toBe(true);
     expect(availability.has("beads")).toBe(true);
+    expect(availability.has("swarm-mail")).toBe(true);
     expect(availability.has("agent-mail")).toBe(true);
   });
 
@@ -1327,7 +1323,7 @@ describe("Swarm Prompt V2 (with Swarm Mail/Beads)", () => {
       expect(SUBTASK_PROMPT_V2).toContain("[CONTEXT]");
       expect(SUBTASK_PROMPT_V2).toContain("{shared_context}");
 
-      expect(SUBTASK_PROMPT_V2).toContain("[WORKFLOW]");
+      expect(SUBTASK_PROMPT_V2).toContain("[MANDATORY SURVIVAL CHECKLIST]");
     });
 
     it("DOES contain Swarm Mail instructions (MANDATORY)", () => {
@@ -1339,7 +1335,7 @@ describe("Swarm Prompt V2 (with Swarm Mail/Beads)", () => {
       expect(SUBTASK_PROMPT_V2).toContain("swarmmail_reserve");
       expect(SUBTASK_PROMPT_V2).toContain("swarmmail_release");
       expect(SUBTASK_PROMPT_V2).toContain("thread_id");
-      expect(SUBTASK_PROMPT_V2).toContain("non-negotiable");
+      expect(SUBTASK_PROMPT_V2).toContain("NON-NEGOTIABLE");
     });
 
     it("DOES contain beads instructions", () => {
@@ -1352,10 +1348,73 @@ describe("Swarm Prompt V2 (with Swarm Mail/Beads)", () => {
     });
 
     it("instructs agents to communicate via swarmmail", () => {
-      expect(SUBTASK_PROMPT_V2).toContain("Never work silently");
+      expect(SUBTASK_PROMPT_V2).toContain("don't work silently");
       expect(SUBTASK_PROMPT_V2).toContain("progress");
       expect(SUBTASK_PROMPT_V2).toContain("coordinator");
       expect(SUBTASK_PROMPT_V2).toContain("CRITICAL");
+    });
+
+    it("contains survival checklist: semantic-memory_find", () => {
+      // Step 2: Query past learnings BEFORE starting work
+      expect(SUBTASK_PROMPT_V2).toContain("semantic-memory_find");
+      expect(SUBTASK_PROMPT_V2).toContain("Query Past Learnings");
+      expect(SUBTASK_PROMPT_V2).toContain("BEFORE starting work");
+      expect(SUBTASK_PROMPT_V2).toContain("Past learnings save time");
+    });
+
+    it("contains survival checklist: skills discovery and loading", () => {
+      // Step 3: Load relevant skills if available
+      expect(SUBTASK_PROMPT_V2).toContain("skills_list");
+      expect(SUBTASK_PROMPT_V2).toContain("skills_use");
+      expect(SUBTASK_PROMPT_V2).toContain("Load Relevant Skills");
+      expect(SUBTASK_PROMPT_V2).toContain("Common skill triggers");
+    });
+
+    it("contains survival checklist: worker reserves files (not coordinator)", () => {
+      // Step 4: Worker reserves their own files
+      expect(SUBTASK_PROMPT_V2).toContain("swarmmail_reserve");
+      expect(SUBTASK_PROMPT_V2).toContain("Reserve Your Files");
+      expect(SUBTASK_PROMPT_V2).toContain("YOU reserve, not coordinator");
+      expect(SUBTASK_PROMPT_V2).toContain("Workers reserve their own files");
+    });
+
+    it("contains survival checklist: swarm_progress at milestones", () => {
+      // Step 6: Report progress at 25/50/75%
+      expect(SUBTASK_PROMPT_V2).toContain("swarm_progress");
+      expect(SUBTASK_PROMPT_V2).toContain("Report Progress at Milestones");
+      expect(SUBTASK_PROMPT_V2).toContain("progress_percent");
+      expect(SUBTASK_PROMPT_V2).toContain("25%, 50%, 75%");
+      expect(SUBTASK_PROMPT_V2).toContain("auto-checkpoint");
+    });
+
+    it("contains survival checklist: swarm_checkpoint before risky ops", () => {
+      // Step 7: Manual checkpoint before risky operations
+      expect(SUBTASK_PROMPT_V2).toContain("swarm_checkpoint");
+      expect(SUBTASK_PROMPT_V2).toContain("Manual Checkpoint BEFORE Risky Operations");
+      expect(SUBTASK_PROMPT_V2).toContain("Large refactors");
+      expect(SUBTASK_PROMPT_V2).toContain("preserve context");
+    });
+
+    it("contains survival checklist: semantic-memory_store for learnings", () => {
+      // Step 8: Store discoveries and learnings
+      expect(SUBTASK_PROMPT_V2).toContain("semantic-memory_store");
+      expect(SUBTASK_PROMPT_V2).toContain("Store Learnings");
+      expect(SUBTASK_PROMPT_V2).toContain("Tricky bugs you solved");
+      expect(SUBTASK_PROMPT_V2).toContain("Store the WHY, not just the WHAT");
+    });
+
+    it("does NOT mention coordinator reserving files", () => {
+      // Coordinator no longer reserves files - workers do it themselves
+      const lowerPrompt = SUBTASK_PROMPT_V2.toLowerCase();
+      expect(lowerPrompt).not.toContain("coordinator reserves");
+      expect(lowerPrompt).not.toContain("coordinator will reserve");
+    });
+
+    it("enforces swarm_complete over manual beads_close", () => {
+      // Step 9: Use swarm_complete, not beads_close
+      expect(SUBTASK_PROMPT_V2).toContain("swarm_complete");
+      expect(SUBTASK_PROMPT_V2).toContain("DO NOT manually close the bead");
+      expect(SUBTASK_PROMPT_V2).toContain("Use swarm_complete");
     });
   });
 
