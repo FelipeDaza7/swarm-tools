@@ -48,7 +48,6 @@ import {
   getNextReadyBead,
   getInProgressBeads,
   getBlockedBeads,
-  rebuildBlockedCache,
   markBeadDirty,
   getDirtyBeads,
   clearDirtyBead,
@@ -264,6 +263,29 @@ export function createBeadsAdapter(
     // ============================================================================
 
     async addDependency(projectKeyParam, beadId, dependsOnId, relationship, options?, projectPath?) {
+      // Validate both beads exist
+      const sourceBead = await getBead(db, projectKeyParam, beadId);
+      if (!sourceBead) {
+        throw new Error(`[BeadsAdapter] Bead not found: ${beadId}`);
+      }
+      
+      const targetBead = await getBead(db, projectKeyParam, dependsOnId);
+      if (!targetBead) {
+        throw new Error(`[BeadsAdapter] Target bead not found: ${dependsOnId}`);
+      }
+      
+      // Prevent self-dependency
+      if (beadId === dependsOnId) {
+        throw new Error(`[BeadsAdapter] Bead cannot depend on itself`);
+      }
+      
+      // Check for cycles (import at runtime to avoid circular deps)
+      const { wouldCreateCycle } = await import("./dependencies.js");
+      const hasCycle = await wouldCreateCycle(db, beadId, dependsOnId);
+      if (hasCycle) {
+        throw new Error(`[BeadsAdapter] Adding dependency would create a cycle`);
+      }
+      
       const event: BeadEvent = {
         type: "bead_dependency_added",
         project_key: projectKeyParam,
@@ -510,6 +532,16 @@ export function createBeadsAdapter(
 
     async runMigrations(projectPath?) {
       const { beadsMigration } = await import("./migrations.js");
+      
+      // Ensure schema_version table exists first
+      await db.exec(`
+        CREATE TABLE IF NOT EXISTS schema_version (
+          version INTEGER PRIMARY KEY,
+          applied_at BIGINT NOT NULL,
+          description TEXT
+        );
+      `);
+      
       await db.exec("BEGIN");
       try {
         await db.exec(beadsMigration.up);
@@ -555,11 +587,9 @@ export function createBeadsAdapter(
     },
 
     async rebuildBlockedCache(projectKeyParam, projectPath?) {
-      // Rebuild cache for all beads in project
-      const allBeads = await queryBeads(db, projectKeyParam);
-      for (const bead of allBeads) {
-        await rebuildBlockedCache(db, projectKeyParam, bead.id);
-      }
+      // Rebuild cache for all beads in project (import at runtime)
+      const { rebuildAllBlockedCaches } = await import("./dependencies.js");
+      await rebuildAllBlockedCaches(db, projectKeyParam);
     },
 
     // ============================================================================

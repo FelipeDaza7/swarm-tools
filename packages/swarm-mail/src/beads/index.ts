@@ -90,7 +90,62 @@ export {
   isBlocked,
   markBeadDirty,
   queryBeads,
-  rebuildAllBlockedCaches,
-  rebuildBlockedCache,
   updateProjections,
 } from "./projections.js";
+
+// Dependency operations
+export {
+  wouldCreateCycle,
+  getOpenBlockers,
+  rebuildBeadBlockedCache,
+  rebuildAllBlockedCaches,
+  invalidateBlockedCache,
+} from "./dependencies.js";
+
+// Label operations
+export {
+  getBeadsByLabel,
+  getAllLabels,
+} from "./labels.js";
+
+// Comment operations
+export {
+  getCommentById,
+  getCommentThread,
+} from "./comments.js";
+
+// JSONL export/import
+export {
+  exportToJSONL,
+  exportDirtyBeads,
+  importFromJSONL,
+  parseJSONL,
+  serializeToJSONL,
+  computeContentHash,
+  type BeadExport,
+  type ExportOptions,
+  type ImportOptions,
+  type ImportResult,
+} from "./jsonl.js";
+
+// FlushManager for auto-sync
+export {
+  FlushManager,
+  type FlushManagerOptions,
+  type FlushResult,
+} from "./flush-manager.js";
+
+// 3-Way Merge Driver
+export {
+  merge3Way,
+  mergeJsonl,
+  isTombstone,
+  isExpiredTombstone,
+  DEFAULT_TOMBSTONE_TTL_MS,
+  MIN_TOMBSTONE_TTL_MS,
+  CLOCK_SKEW_GRACE_MS,
+  STATUS_TOMBSTONE,
+  type IssueKey,
+  type MergeResult,
+  type MergeOptions,
+} from "./merge.js";

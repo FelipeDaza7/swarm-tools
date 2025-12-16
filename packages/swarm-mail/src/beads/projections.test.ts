@@ -17,22 +17,23 @@ import { runMigrations } from "../streams/migrations.js";
 import { beadsMigration } from "./migrations.js";
 import type { DatabaseAdapter } from "../types/database.js";
 import {
-  clearDirtyBead,
   getBead,
   getBlockedBeads,
-  getBlockers,
   getComments,
   getDependencies,
-  getDirtyBeads,
-  getInProgressBeads,
+  getDependents,
   getLabels,
-  getNextReadyBead,
-  isBlocked,
   markBeadDirty,
   queryBeads,
-  rebuildBlockedCache,
   updateProjections,
+  getDirtyBeads,
+  clearDirtyBead,
+  isBlocked,
+  getBlockers,
+  getInProgressBeads,
+  getNextReadyBead,
 } from "./projections.js";
+import { rebuildBeadBlockedCache } from "./dependencies.js";
 
 /**
  * Wrap PGLite to match DatabaseAdapter interface
@@ -333,7 +334,7 @@ describe("Beads Projections", () => {
       });
 
       // Rebuild cache
-      await rebuildBlockedCache(db, projectKey, "bd-124");
+      await rebuildBeadBlockedCache(db, projectKey, "bd-124");
 
       const blocked = await isBlocked(db, projectKey, "bd-124");
       expect(blocked).toBe(true);
@@ -523,7 +524,7 @@ describe("Beads Projections", () => {
         timestamp: Date.now(),
       });
 
-      await rebuildBlockedCache(db, projectKey, "bd-124");
+      await rebuildBeadBlockedCache(db, projectKey, "bd-124");
 
       const blocked = await getBlockedBeads(db, projectKey);
       expect(blocked).toHaveLength(1);
