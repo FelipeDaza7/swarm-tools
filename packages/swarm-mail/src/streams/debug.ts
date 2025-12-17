@@ -352,9 +352,7 @@ async function debugEventsPaginated(
     allEvents.push(...filtered);
     offset += batchSize;
 
-    console.log(
-      `[SwarmMail] Fetched ${allEvents.length} events (batch size: ${batchSize})`,
-    );
+
   }
 
   // Sort by sequence descending (most recent first)

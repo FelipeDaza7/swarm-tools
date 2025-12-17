@@ -329,10 +329,6 @@ export class SemanticMemoryStorage implements LearningStorage {
   constructor(config: Partial<StorageConfig> = {}) {
     // Use getDefaultStorageConfig() to ensure env vars are read at runtime
     this.config = { ...getDefaultStorageConfig(), ...config };
-    console.log(
-      `[storage] SemanticMemoryStorage initialized with collections:`,
-      this.config.collections,
-    );
   }
 
   // -------------------------------------------------------------------------
@@ -381,7 +377,6 @@ export class SemanticMemoryStorage implements LearningStorage {
       args.push("--metadata", JSON.stringify(metadata));
     }
 
-    console.log(`[storage] store() -> collection="${collection}"`);
     sessionStats.storesCount++;
 
     const result = await execSemanticMemory(args);
@@ -416,9 +411,6 @@ export class SemanticMemoryStorage implements LearningStorage {
       args.push("--fts");
     }
 
-    console.log(
-      `[storage] find() -> collection="${collection}", query="${query.slice(0, 50)}${query.length > 50 ? "..." : ""}", limit=${limit}, fts=${useFts}`,
-    );
     sessionStats.queriesCount++;
 
     const result = await execSemanticMemory(args);
@@ -456,7 +448,6 @@ export class SemanticMemoryStorage implements LearningStorage {
   }
 
   private async list<T>(collection: string): Promise<T[]> {
-    console.log(`[storage] list() -> collection="${collection}"`);
     sessionStats.queriesCount++;
 
     const result = await execSemanticMemory([

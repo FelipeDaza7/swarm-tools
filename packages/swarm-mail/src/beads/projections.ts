@@ -56,7 +56,7 @@ export async function updateProjections(
   db: DatabaseAdapter,
   event: BeadEvent,
 ): Promise<void> {
-  console.log(`[beads/projections] Updating projection for ${event.type}`);
+
 
   switch (event.type) {
     case "bead_created":

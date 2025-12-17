@@ -490,12 +490,7 @@ export function merge3Way(
   const ttl = options.tombstoneTtlMs ?? DEFAULT_TOMBSTONE_TTL_MS;
   const debug = options.debug ?? false;
 
-  if (debug) {
-    console.log("[merge] Starting 3-way merge");
-    console.log(`[merge] Base: ${base.length} issues`);
-    console.log(`[merge] Left: ${left.length} issues`);
-    console.log(`[merge] Right: ${right.length} issues`);
-  }
+
 
   // Build maps for quick lookup
   const baseMap = new Map<string, BeadExport>();
@@ -530,12 +525,6 @@ export function merge3Way(
     // Determine tombstone status (safe because we check existence)
     const leftTombstone = leftBead !== undefined && isTombstone(leftBead);
     const rightTombstone = rightBead !== undefined && isTombstone(rightBead);
-
-    if (debug) {
-      console.log(`[merge] Processing key: ${key}`);
-      console.log(`[merge]   inBase=${baseBead !== undefined}, inLeft=${leftBead !== undefined}, inRight=${rightBead !== undefined}`);
-      console.log(`[merge]   leftTombstone=${leftTombstone}, rightTombstone=${rightTombstone}`);
-    }
 
     // Handle different scenarios based on presence in each version
     if (baseBead && leftBead && rightBead) {
@@ -648,7 +637,6 @@ export function merge3Way(
   }
 
   if (debug) {
-    console.log(`[merge] Complete: ${result.length} merged, ${conflicts.length} conflicts`);
   }
 
   return { merged: result, conflicts };

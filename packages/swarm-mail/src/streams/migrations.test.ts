@@ -26,15 +26,15 @@ describe("Schema Migrations", () => {
   });
 
   describe("Fresh Install", () => {
-    it("should start with version 0", async () => {
+    it("should start with version -1 (no migrations applied)", async () => {
       const version = await getCurrentVersion(db);
-      expect(version).toBe(0);
+      expect(version).toBe(-1);
     });
 
     it("should run all migrations on fresh database", async () => {
       const result = await runMigrations(db);
 
-      expect(result.applied).toEqual([1, 2, 3, 4, 5]);
+      expect(result.applied).toEqual([0, 1, 2, 3, 4, 5]);
       expect(result.current).toBe(5);
 
       const version = await getCurrentVersion(db);
@@ -105,7 +105,7 @@ describe("Schema Migrations", () => {
     it("should be safe to run migrations multiple times", async () => {
       // First run
       const result1 = await runMigrations(db);
-      expect(result1.applied).toEqual([1, 2, 3, 4, 5]);
+      expect(result1.applied).toEqual([0, 1, 2, 3, 4, 5]);
 
       // Second run - should apply nothing
       const result2 = await runMigrations(db);
@@ -120,8 +120,9 @@ describe("Schema Migrations", () => {
 
   describe("Incremental Upgrade", () => {
     it("should apply only new migrations", async () => {
-      // Manually apply migration 1
-      await db.exec(migrations[0]!.up);
+      // Manually apply migrations 0 and 1 (core tables + cursors)
+      await db.exec(migrations[0]!.up); // version 0: core event store tables
+      await db.exec(migrations[1]!.up); // version 1: cursors table
       await db.exec(`
         CREATE TABLE IF NOT EXISTS schema_version (
           version INTEGER PRIMARY KEY,
@@ -132,7 +133,12 @@ describe("Schema Migrations", () => {
       await db.query(
         `INSERT INTO schema_version (version, applied_at, description)
          VALUES ($1, $2, $3)`,
-        [1, Date.now(), migrations[0]!.description],
+        [0, Date.now(), migrations[0]!.description],
+      );
+      await db.query(
+        `INSERT INTO schema_version (version, applied_at, description)
+         VALUES ($1, $2, $3)`,
+        [1, Date.now(), migrations[1]!.description],
       );
 
       // Now run migrations - should only apply 2-5
@@ -217,14 +223,16 @@ describe("Schema Migrations", () => {
 
     it("should list pending migrations", async () => {
       const pending1 = await getPendingMigrations(db);
-      expect(pending1).toHaveLength(5);
-      expect(pending1.map((m) => m.version)).toEqual([1, 2, 3, 4, 5]);
+      expect(pending1).toHaveLength(6);
+      expect(pending1.map((m) => m.version)).toEqual([0, 1, 2, 3, 4, 5]);
 
-      // Apply migration 1
-      const migration = migrations[0];
-      if (!migration) throw new Error("Migration not found");
+      // Apply migrations 0 and 1
+      const migration0 = migrations[0];
+      const migration1 = migrations[1];
+      if (!migration0 || !migration1) throw new Error("Migration not found");
 
-      await db.exec(migration.up);
+      await db.exec(migration0.up);
+      await db.exec(migration1.up);
       await db.exec(`
         CREATE TABLE IF NOT EXISTS schema_version (
           version INTEGER PRIMARY KEY,
@@ -235,7 +243,12 @@ describe("Schema Migrations", () => {
       await db.query(
         `INSERT INTO schema_version (version, applied_at, description)
          VALUES ($1, $2, $3)`,
-        [1, Date.now(), migration.description],
+        [0, Date.now(), migration0.description],
+      );
+      await db.query(
+        `INSERT INTO schema_version (version, applied_at, description)
+         VALUES ($1, $2, $3)`,
+        [1, Date.now(), migration1.description],
       );
 
       const pending2 = await getPendingMigrations(db);
@@ -250,18 +263,19 @@ describe("Schema Migrations", () => {
       await runMigrations(db);
 
       const applied2 = await getAppliedMigrations(db);
-      expect(applied2).toHaveLength(5);
-      expect(applied2.map((m) => m.version)).toEqual([1, 2, 3, 4, 5]);
+      expect(applied2).toHaveLength(6);
+      expect(applied2.map((m) => m.version)).toEqual([0, 1, 2, 3, 4, 5]);
       expect(applied2[0]?.description).toBe(
-        "Add cursors table for DurableCursor",
+        "Create core event store tables",
       );
     });
   });
 
   describe("Data Persistence", () => {
     it("should preserve data across migrations", async () => {
-      // Apply migration 1 (cursors table)
-      await db.exec(migrations[0]!.up);
+      // Apply migrations 0 and 1 (core tables + cursors)
+      await db.exec(migrations[0]!.up); // version 0: core event store tables
+      await db.exec(migrations[1]!.up); // version 1: cursors table
       await db.exec(`
         CREATE TABLE IF NOT EXISTS schema_version (
           version INTEGER PRIMARY KEY,
@@ -272,10 +286,15 @@ describe("Schema Migrations", () => {
       await db.query(
         `INSERT INTO schema_version (version, applied_at, description)
          VALUES ($1, $2, $3)`,
-        [1, Date.now(), migrations[0]!.description],
+        [0, Date.now(), migrations[0]!.description],
+      );
+      await db.query(
+        `INSERT INTO schema_version (version, applied_at, description)
+         VALUES ($1, $2, $3)`,
+        [1, Date.now(), migrations[1]!.description],
       );
 
-      // Insert test data
+      // Insert test data into cursors table (created by migration 1)
       await db.query(
         `INSERT INTO cursors (stream, checkpoint, position, updated_at)
          VALUES ($1, $2, $3, $4)`,
@@ -296,11 +315,13 @@ describe("Schema Migrations", () => {
 
   describe("Error Handling", () => {
     it("should rollback failed migrations", async () => {
-      // Apply good migration first
-      const migration = migrations[0];
-      if (!migration) throw new Error("Migration not found");
+      // Apply migrations 0 and 1 first
+      const migration0 = migrations[0];
+      const migration1 = migrations[1];
+      if (!migration0 || !migration1) throw new Error("Migration not found");
 
-      await db.exec(migration.up);
+      await db.exec(migration0.up);
+      await db.exec(migration1.up);
       await db.exec(`
         CREATE TABLE IF NOT EXISTS schema_version (
           version INTEGER PRIMARY KEY,
@@ -311,7 +332,12 @@ describe("Schema Migrations", () => {
       await db.query(
         `INSERT INTO schema_version (version, applied_at, description)
          VALUES ($1, $2, $3)`,
-        [1, Date.now(), migration.description],
+        [0, Date.now(), migration0.description],
+      );
+      await db.query(
+        `INSERT INTO schema_version (version, applied_at, description)
+         VALUES ($1, $2, $3)`,
+        [1, Date.now(), migration1.description],
       );
 
       // Try to run invalid SQL in a transaction
@@ -343,12 +369,15 @@ describe("Schema Migrations", () => {
         `SELECT version, applied_at, description FROM schema_version ORDER BY version`,
       );
 
-      expect(result.rows).toHaveLength(5);
-      expect(result.rows[0]?.version).toBe(1);
+      expect(result.rows).toHaveLength(6);
+      expect(result.rows[0]?.version).toBe(0);
       expect(result.rows[0]?.description).toBe(
+        "Create core event store tables",
+      );
+      expect(result.rows[1]?.version).toBe(1);
+      expect(result.rows[1]?.description).toBe(
         "Add cursors table for DurableCursor",
       );
-      expect(result.rows[1]?.version).toBe(2);
 
       // Applied_at should be recent
       const appliedAt = parseInt(result.rows[0]?.applied_at as string);

@@ -490,11 +490,6 @@ export class SqliteRateLimiter implements RateLimiter {
       if (result.changes < BATCH_SIZE) break;
     }
 
-    if (totalDeleted > 0) {
-      console.log("[RateLimiter] Cleanup completed:", {
-        deletedRows: totalDeleted,
-      });
-    }
   }
 
   async recordRequest(agentName: string, endpoint: string): Promise<void> {

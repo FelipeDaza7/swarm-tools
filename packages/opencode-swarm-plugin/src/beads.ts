@@ -129,8 +129,9 @@ const adapterCache = new Map<string, BeadsAdapter>();
 
 /**
  * Get or create a BeadsAdapter instance for a project
+ * Exported for testing - allows tests to verify state directly
  */
-async function getBeadsAdapter(projectKey: string): Promise<BeadsAdapter> {
+export async function getBeadsAdapter(projectKey: string): Promise<BeadsAdapter> {
   if (adapterCache.has(projectKey)) {
     return adapterCache.get(projectKey)!;
   }

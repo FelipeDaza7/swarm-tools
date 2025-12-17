@@ -1031,7 +1031,7 @@ export const swarm_complete = tool({
       .optional()
       .describe("Number of retry attempts during task"),
   },
-  async execute(args) {
+  async execute(args, _ctx) {
     // Extract epic ID early for error notifications
     const epicId = args.bead_id.includes(".")
       ? args.bead_id.split(".")[0]
@@ -1295,9 +1295,6 @@ Continuing with completion, but this should be fixed for future subtasks.`;
 
           if (storeResult.exitCode === 0) {
             memoryStored = true;
-            console.log(
-              `[swarm_complete] Stored learning for ${args.bead_id} in semantic-memory`,
-            );
           } else {
             memoryError = `semantic-memory store failed: ${storeResult.stderr.toString().slice(0, 200)}`;
             console.warn(`[swarm_complete] ${memoryError}`);
@@ -1351,15 +1348,27 @@ Continuing with completion, but this should be fixed for future subtasks.`;
         .filter(Boolean)
         .join("\n");
 
-      await sendSwarmMessage({
-        projectPath: args.project_key,
-        fromAgent: args.agent_name,
-        toAgents: [], // Thread broadcast
-        subject: `Complete: ${args.bead_id}`,
-        body: completionBody,
-        threadId: epicId,
-        importance: "normal",
-      });
+      // Send completion message (non-fatal if it fails)
+      let messageSent = false;
+      let messageError: string | undefined;
+      try {
+        await sendSwarmMessage({
+          projectPath: args.project_key,
+          fromAgent: args.agent_name,
+          toAgents: [], // Thread broadcast
+          subject: `Complete: ${args.bead_id}`,
+          body: completionBody,
+          threadId: epicId,
+          importance: "normal",
+        });
+        messageSent = true;
+      } catch (error) {
+        // Non-fatal - log and continue
+        messageError = error instanceof Error ? error.message : String(error);
+        console.warn(
+          `[swarm_complete] Failed to send completion message: ${messageError}`,
+        );
+      }
 
       // Build success response with semantic-memory integration
       const response = {
@@ -1367,7 +1376,8 @@ Continuing with completion, but this should be fixed for future subtasks.`;
         bead_id: args.bead_id,
         closed: true,
         reservations_released: true,
-        message_sent: true,
+        message_sent: messageSent,
+        message_error: messageError,
         agent_registration: {
           verified: agentRegistered,
           warning: registrationWarning || undefined,

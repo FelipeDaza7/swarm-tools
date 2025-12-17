@@ -1,10 +1,10 @@
 /**
  * Beads Integration Tests
  *
- * These tests exercise the real `bd` CLI in a Docker environment.
+ * These tests exercise the BeadsAdapter-based tools directly.
  * They validate the tool wrappers work correctly with actual beads operations.
  *
- * Run with: bun run docker:test
+ * Run with: bun test src/beads.integration.test.ts
  */
 import { describe, it, expect, beforeAll, beforeEach, afterAll } from "vitest";
 import {
@@ -17,8 +17,11 @@ import {
   beads_ready,
   beads_link_thread,
   BeadError,
+  getBeadsAdapter,
+  setBeadsWorkingDirectory,
 } from "./beads";
 import type { Bead, EpicCreateResult } from "./schemas";
+import type { BeadsAdapter } from "swarm-mail";
 
 /**
  * Mock tool context for execute functions
@@ -44,6 +47,16 @@ function parseResponse<T>(response: string): T {
 const createdBeadIds: string[] = [];
 
 /**
+ * Test project key - use temp directory to isolate tests
+ */
+const TEST_PROJECT_KEY = `/tmp/beads-integration-test-${Date.now()}`;
+
+/**
+ * Adapter instance for verification
+ */
+let adapter: BeadsAdapter;
+
+/**
  * Cleanup helper - close all created beads after tests
  */
 async function cleanupBeads() {
@@ -58,14 +71,13 @@ async function cleanupBeads() {
 }
 
 describe("beads integration", () => {
-  // Verify bd CLI is available before running tests
+  // Initialize adapter before running tests
   beforeAll(async () => {
-    const result = await Bun.$`bd --version`.quiet().nothrow();
-    if (result.exitCode !== 0) {
-      throw new Error(
-        "bd CLI not found. Run tests in Docker with: bun run docker:test",
-      );
-    }
+    // Set working directory for beads commands
+    setBeadsWorkingDirectory(TEST_PROJECT_KEY);
+    
+    // Get adapter instance for verification
+    adapter = await getBeadsAdapter(TEST_PROJECT_KEY);
   });
 
   afterAll(async () => {
@@ -303,11 +315,10 @@ describe("beads integration", () => {
       expect(result).toContain("Closed");
       expect(result).toContain(created.id);
 
-      // Verify it's actually closed using bd show (query has limit issues with many closed beads)
-      const showResult = await Bun.$`bd show ${created.id} --json`.quiet();
-      const showData = JSON.parse(showResult.stdout.toString());
-      const closedBead = Array.isArray(showData) ? showData[0] : showData;
-      expect(closedBead.status).toBe("closed");
+      // Verify it's actually closed using adapter
+      const closedBead = await adapter.getBead(TEST_PROJECT_KEY, created.id);
+      expect(closedBead).toBeDefined();
+      expect(closedBead!.status).toBe("closed");
     });
 
     it("throws BeadError for invalid bead ID", async () => {
@@ -337,15 +348,10 @@ describe("beads integration", () => {
       expect(result).toContain("Started");
       expect(result).toContain(created.id);
 
-      // Verify status changed
-      const queryResult = await beads_query.execute(
-        { status: "in_progress" },
-        mockContext,
-      );
-      const inProgressBeads = parseResponse<Bead[]>(queryResult);
-      const startedBead = inProgressBeads.find((b) => b.id === created.id);
+      // Verify status changed using adapter
+      const startedBead = await adapter.getBead(TEST_PROJECT_KEY, created.id);
       expect(startedBead).toBeDefined();
-      expect(startedBead?.status).toBe("in_progress");
+      expect(startedBead!.status).toBe("in_progress");
     });
 
     it("throws BeadError for invalid bead ID", async () => {
@@ -418,11 +424,12 @@ describe("beads integration", () => {
       expect(epicResult.epic.issue_type).toBe("epic");
       expect(epicResult.subtasks).toHaveLength(3);
 
-      // Subtasks should have IDs that indicate parent relationship
-      // Format: {epic_id}.{index} e.g., "opencode-swarm-plugin-abc.1"
+      // Subtasks should have parent_id pointing to epic
+      // Verify via adapter since parent_id may not be in the output schema
       for (const subtask of epicResult.subtasks) {
-        expect(subtask.id).toContain(epicResult.epic.id);
-        expect(subtask.id).toMatch(/\.\d+$/); // ends with .N
+        const subtaskBead = await adapter.getBead(TEST_PROJECT_KEY, subtask.id);
+        expect(subtaskBead).toBeDefined();
+        expect(subtaskBead!.parent_id).toBe(epicResult.epic.id);
       }
     });
 
@@ -517,11 +524,10 @@ describe("beads integration", () => {
       expect(result).toContain(testBeadId);
       expect(result).toContain(threadId);
 
-      // Verify the thread marker is in the description using bd show
-      const showResult = await Bun.$`bd show ${testBeadId} --json`.quiet();
-      const showData = JSON.parse(showResult.stdout.toString());
-      const linkedBead = Array.isArray(showData) ? showData[0] : showData;
-      expect(linkedBead.description).toContain(`[thread:${threadId}]`);
+      // Verify the thread marker is in the description using adapter
+      const linkedBead = await adapter.getBead(TEST_PROJECT_KEY, testBeadId);
+      expect(linkedBead).toBeDefined();
+      expect(linkedBead!.description).toContain(`[thread:${threadId}]`);
     });
 
     it("returns message if thread already linked", async () => {
@@ -555,13 +561,11 @@ describe("beads integration", () => {
         mockContext,
       );
 
-      // Verify both original description and thread marker exist using bd show
-      const showResult = await Bun.$`bd show ${testBeadId} --json`.quiet();
-      const showData = JSON.parse(showResult.stdout.toString());
-      const linkedBead = Array.isArray(showData) ? showData[0] : showData;
-
-      expect(linkedBead.description).toContain("Important context here");
-      expect(linkedBead.description).toContain(`[thread:${threadId}]`);
+      // Verify both original description and thread marker exist using adapter
+      const linkedBead = await adapter.getBead(TEST_PROJECT_KEY, testBeadId);
+      expect(linkedBead).toBeDefined();
+      expect(linkedBead!.description).toContain("Important context here");
+      expect(linkedBead!.description).toContain(`[thread:${threadId}]`);
     });
 
     it("throws BeadError for invalid bead ID", async () => {
@@ -575,7 +579,7 @@ describe("beads integration", () => {
   });
 
   describe("error handling", () => {
-    it("throws BeadError with command info on CLI failure", async () => {
+    it("throws BeadError with command info on adapter failure", async () => {
       try {
         await beads_update.execute(
           { id: "definitely-not-a-real-bead-id", status: "closed" },
@@ -585,8 +589,7 @@ describe("beads integration", () => {
       } catch (error) {
         expect(error).toBeInstanceOf(BeadError);
         const beadError = error as BeadError;
-        expect(beadError.command).toContain("bd");
-        expect(beadError.exitCode).toBeDefined();
+        expect(beadError.command).toBeDefined();
       }
     });
   });
@@ -623,11 +626,10 @@ describe("beads integration", () => {
       );
       expect(closeResult).toContain("Closed");
 
-      // Verify final state using bd show
-      const showResult = await Bun.$`bd show ${bead.id} --json`.quiet();
-      const showData = JSON.parse(showResult.stdout.toString());
-      const finalBead = Array.isArray(showData) ? showData[0] : showData;
-      expect(finalBead.status).toBe("closed");
+      // Verify final state using adapter
+      const finalBead = await adapter.getBead(TEST_PROJECT_KEY, bead.id);
+      expect(finalBead).toBeDefined();
+      expect(finalBead!.status).toBe("closed");
     });
 
     it("epic workflow: create epic -> start subtasks -> close subtasks -> close epic", async () => {
@@ -665,23 +667,15 @@ describe("beads integration", () => {
         mockContext,
       );
 
-      // Verify all are closed using bd show
-      const epicShowResult =
-        await Bun.$`bd show ${epic.epic.id} --json`.quiet();
-      const epicShowData = JSON.parse(epicShowResult.stdout.toString());
-      const epicClosed = Array.isArray(epicShowData)
-        ? epicShowData[0]
-        : epicShowData;
-      expect(epicClosed.status).toBe("closed");
+      // Verify all are closed using adapter
+      const epicClosed = await adapter.getBead(TEST_PROJECT_KEY, epic.epic.id);
+      expect(epicClosed).toBeDefined();
+      expect(epicClosed!.status).toBe("closed");
 
       for (const subtask of epic.subtasks) {
-        const subtaskShowResult =
-          await Bun.$`bd show ${subtask.id} --json`.quiet();
-        const subtaskShowData = JSON.parse(subtaskShowResult.stdout.toString());
-        const subtaskClosed = Array.isArray(subtaskShowData)
-          ? subtaskShowData[0]
-          : subtaskShowData;
-        expect(subtaskClosed.status).toBe("closed");
+        const subtaskClosed = await adapter.getBead(TEST_PROJECT_KEY, subtask.id);
+        expect(subtaskClosed).toBeDefined();
+        expect(subtaskClosed!.status).toBe("closed");
       }
     });
   });

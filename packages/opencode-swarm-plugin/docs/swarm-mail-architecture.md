@@ -516,7 +516,7 @@ Swarm Mail is **inspired by** [Agent Mail](https://github.com/sst/opencode) (SST
 | Aspect                   | Agent Mail (SST)              | Swarm Mail (This Plugin)               |
 | ------------------------ | ----------------------------- | -------------------------------------- |
 | **Architecture**         | MCP server (external process) | Embedded (PGLite in-process)           |
-| **Storage**              | SQLite file                   | PGLite (WASM Postgres)                 |
+| **Storage**              | PGLite (embedded Postgres)    | PGLite (WASM Postgres)                 |
 | **Dependencies**         | Requires MCP server running   | Zero external deps, just npm install   |
 | **Effect-TS**            | No                            | Yes (full Effect integration)          |
 | **Event Sourcing**       | No (CRUD operations)          | Yes (append-only event log)            |

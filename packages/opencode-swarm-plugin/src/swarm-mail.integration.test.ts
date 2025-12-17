@@ -9,7 +9,11 @@
 
 import { randomUUID } from "node:crypto";
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
-import { resetDatabase, closeDatabase, getDatabase } from "./streams/index";
+import {
+  resetDatabase,
+  getDatabase,
+  closeDatabase,
+} from "swarm-mail";
 import {
   swarmmail_init,
   swarmmail_send,

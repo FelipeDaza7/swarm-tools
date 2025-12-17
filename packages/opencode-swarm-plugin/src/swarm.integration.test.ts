@@ -1548,6 +1548,89 @@ describe("Swarm Prompt V2 (with Swarm Mail/Beads)", () => {
       },
     );
   });
+
+  describe("swarm_complete error handling", () => {
+    let beadsAvailable = false;
+
+    beforeAll(async () => {
+      beadsAvailable = await isBeadsAvailable();
+    });
+
+    it.skipIf(!beadsAvailable)(
+      "returns structured error when bead close fails",
+      async () => {
+        // Try to complete a non-existent bead
+        const result = await swarm_complete.execute(
+          {
+            project_key: "/tmp/test-error-handling",
+            agent_name: "test-agent",
+            bead_id: "bd-nonexistent-12345",
+            summary: "This should fail",
+            skip_verification: true,
+          },
+          mockContext,
+        );
+
+        const parsed = JSON.parse(result);
+
+        // Should return structured error, not throw
+        expect(parsed.success).toBe(false);
+        expect(parsed.error).toContain("Failed to close bead");
+        expect(parsed.failed_step).toBe("bd close");
+        expect(parsed.bead_id).toBe("bd-nonexistent-12345");
+        expect(parsed.recovery).toBeDefined();
+        expect(parsed.recovery.steps).toBeInstanceOf(Array);
+      },
+    );
+
+    it.skipIf(!beadsAvailable)(
+      "includes message_sent status in response",
+      async () => {
+        const createResult =
+          await Bun.$`bd create "Test message status" -t task --json`
+            .quiet()
+            .nothrow();
+
+        if (createResult.exitCode !== 0) {
+          console.warn(
+            "Could not create bead:",
+            createResult.stderr.toString(),
+          );
+          return;
+        }
+
+        const bead = JSON.parse(createResult.stdout.toString());
+
+        try {
+          const result = await swarm_complete.execute(
+            {
+              project_key: "/tmp/test-message-status",
+              agent_name: "test-agent",
+              bead_id: bead.id,
+              summary: "Test message status tracking",
+              skip_verification: true,
+            },
+            mockContext,
+          );
+
+          const parsed = JSON.parse(result);
+
+          // Should have message_sent field (true or false)
+          expect(parsed).toHaveProperty("message_sent");
+          // If message failed, should have message_error
+          if (!parsed.message_sent) {
+            expect(parsed).toHaveProperty("message_error");
+          }
+        } catch (error) {
+          // Clean up bead if test fails
+          await Bun.$`bd close ${bead.id} --reason "Test cleanup"`
+            .quiet()
+            .nothrow();
+          throw error;
+        }
+      },
+    );
+  });
 });
 
 // ============================================================================

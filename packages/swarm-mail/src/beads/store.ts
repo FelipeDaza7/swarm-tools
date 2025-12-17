@@ -96,12 +96,7 @@ export async function appendBeadEvent(
   // Extract common fields (same structure as agent events)
   const { type, project_key, timestamp, ...rest } = event;
 
-  console.log("[BeadsStore] Appending bead event", {
-    type,
-    projectKey: project_key,
-    beadId: event.bead_id,
-    timestamp,
-  });
+
 
   // Insert into shared events table
   const result = await db.query<{ id: number; sequence: number }>(
@@ -117,15 +112,7 @@ export async function appendBeadEvent(
   }
   const { id, sequence } = row;
 
-  console.log("[BeadsStore] Bead event appended", {
-    type,
-    id,
-    sequence,
-    beadId: event.bead_id,
-  });
-
   // Update materialized views based on event type
-  console.debug("[BeadsStore] Updating projections", { type, id });
   // Cast to any to match projections' loose event type (with index signature)
   await updateProjections(db, { ...event, id, sequence } as any);
 
@@ -324,11 +311,6 @@ export async function replayBeadEvents(
       // Cast to any to match projections' loose event type
       await updateProjections(db, event as any);
     }
-
-    console.log("[BeadsStore] Replay complete", {
-      eventsReplayed: events.length,
-      duration: Date.now() - startTime,
-    });
 
     return {
       eventsReplayed: events.length,

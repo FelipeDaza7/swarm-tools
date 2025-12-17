@@ -121,9 +121,6 @@ export const SwarmPlugin: Plugin = async (
       });
 
       if (response.ok) {
-        console.log(
-          `[swarm-plugin] Auto-released ${activeAgentMailState.reservations.length} file reservation(s)`,
-        );
         activeAgentMailState.reservations = [];
       }
     } catch (error) {
@@ -202,9 +199,6 @@ export const SwarmPlugin: Plugin = async (
         const guardrailResult = guardrailOutput(toolName, output.output);
         if (guardrailResult.truncated) {
           output.output = guardrailResult.output;
-          console.log(
-            `[swarm-plugin] Guardrail truncated ${toolName}: ${guardrailResult.originalLength} → ${guardrailResult.truncatedLength} chars`,
-          );
         }
       }
 
@@ -242,20 +236,12 @@ export const SwarmPlugin: Plugin = async (
       // Auto-release after swarm:complete
       if (toolName === "swarm_complete" && activeAgentMailState) {
         await releaseReservations();
-        console.log(
-          "[swarm-plugin] Auto-released reservations after swarm:complete",
-        );
       }
 
       // Auto-sync beads after closing
       if (toolName === "beads_close") {
         // Trigger async sync without blocking - fire and forget
-        void $`bd sync`
-          .quiet()
-          .nothrow()
-          .then(() => {
-            console.log("[swarm-plugin] Auto-synced beads after close");
-          });
+        void $`bd sync`.quiet().nothrow();
       }
     },
   };

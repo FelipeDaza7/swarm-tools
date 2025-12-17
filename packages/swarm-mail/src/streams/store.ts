@@ -76,12 +76,6 @@ export async function appendEvent(
   // Extract common fields
   const { type, project_key, timestamp, ...rest } = event;
 
-  console.log("[SwarmMail] Appending event", {
-    type,
-    projectKey: project_key,
-    timestamp,
-  });
-
   // Insert event
   const result = await db.query<{ id: number; sequence: number }>(
     `INSERT INTO events (type, project_key, timestamp, data)
@@ -96,15 +90,7 @@ export async function appendEvent(
   }
   const { id, sequence } = row;
 
-  console.log("[SwarmMail] Event appended", {
-    type,
-    id,
-    sequence,
-    projectKey: project_key,
-  });
-
   // Update materialized views based on event type
-  console.debug("[SwarmMail] Updating materialized views", { type, id });
   await updateMaterializedViews(db, { ...event, id, sequence });
 
   return { ...event, id, sequence };
@@ -477,10 +463,6 @@ export async function replayEventsBatched(
       // Report progress
       await onBatch(events, { processed, total, percent });
 
-      console.log(
-        `[SwarmMail] Replaying events: ${processed}/${total} (${percent}%)`,
-      );
-
       offset += batchSize;
     }
 
@@ -620,12 +602,7 @@ async function handleMessageSent(
   db: DatabaseAdapter,
   event: MessageSentEvent & { id: number; sequence: number },
 ): Promise<void> {
-  console.log("[SwarmMail] Handling message sent event", {
-    from: event.from_agent,
-    to: event.to_agents,
-    subject: event.subject,
-    projectKey: event.project_key,
-  });
+
 
   // Insert message
   const result = await db.query<{ id: number }>(
@@ -661,11 +638,6 @@ async function handleMessageSent(
        ON CONFLICT DO NOTHING`,
       params,
     );
-
-    console.log("[SwarmMail] Message recipients inserted", {
-      messageId,
-      recipientCount: event.to_agents.length,
-    });
   }
 }
 
@@ -673,12 +645,6 @@ async function handleFileReserved(
   db: DatabaseAdapter,
   event: FileReservedEvent & { id: number; sequence: number },
 ): Promise<void> {
-  console.log("[SwarmMail] Handling file reservation event", {
-    agent: event.agent_name,
-    paths: event.paths,
-    exclusive: event.exclusive,
-    projectKey: event.project_key,
-  });
 
   // FIX: Bulk insert reservations to avoid N+1 queries
   if (event.paths.length > 0) {
@@ -722,10 +688,6 @@ async function handleFileReserved(
       params,
     );
 
-    console.log("[SwarmMail] File reservations inserted", {
-      agent: event.agent_name,
-      reservationCount: event.paths.length,
-    });
   }
 }
 

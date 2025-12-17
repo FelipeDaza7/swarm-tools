@@ -72,6 +72,123 @@ interface SchemaVersion {
 
 export const migrations: Migration[] = [
   {
+    version: 0,
+    description: "Create core event store tables",
+    up: `
+      -- Events table: The source of truth (append-only)
+      CREATE TABLE IF NOT EXISTS events (
+        id SERIAL PRIMARY KEY,
+        type TEXT NOT NULL,
+        project_key TEXT NOT NULL,
+        timestamp BIGINT NOT NULL,
+        sequence SERIAL,
+        data JSONB NOT NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      );
+
+      -- Index for efficient queries
+      CREATE INDEX IF NOT EXISTS idx_events_project_key ON events(project_key);
+      CREATE INDEX IF NOT EXISTS idx_events_type ON events(type);
+      CREATE INDEX IF NOT EXISTS idx_events_timestamp ON events(timestamp);
+      CREATE INDEX IF NOT EXISTS idx_events_project_type ON events(project_key, type);
+
+      -- Agents materialized view (rebuilt from events)
+      CREATE TABLE IF NOT EXISTS agents (
+        id SERIAL PRIMARY KEY,
+        project_key TEXT NOT NULL,
+        name TEXT NOT NULL,
+        program TEXT DEFAULT 'opencode',
+        model TEXT DEFAULT 'unknown',
+        task_description TEXT,
+        registered_at BIGINT NOT NULL,
+        last_active_at BIGINT NOT NULL,
+        UNIQUE(project_key, name)
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_agents_project ON agents(project_key);
+
+      -- Messages materialized view
+      CREATE TABLE IF NOT EXISTS messages (
+        id SERIAL PRIMARY KEY,
+        project_key TEXT NOT NULL,
+        from_agent TEXT NOT NULL,
+        subject TEXT NOT NULL,
+        body TEXT NOT NULL,
+        thread_id TEXT,
+        importance TEXT DEFAULT 'normal',
+        ack_required BOOLEAN DEFAULT FALSE,
+        created_at BIGINT NOT NULL
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_messages_project ON messages(project_key);
+      CREATE INDEX IF NOT EXISTS idx_messages_thread ON messages(thread_id);
+      CREATE INDEX IF NOT EXISTS idx_messages_created ON messages(created_at DESC);
+
+      -- Message recipients (many-to-many)
+      CREATE TABLE IF NOT EXISTS message_recipients (
+        message_id INTEGER REFERENCES messages(id) ON DELETE CASCADE,
+        agent_name TEXT NOT NULL,
+        read_at BIGINT,
+        acked_at BIGINT,
+        PRIMARY KEY(message_id, agent_name)
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_recipients_agent ON message_recipients(agent_name);
+
+      -- File reservations materialized view
+      CREATE TABLE IF NOT EXISTS reservations (
+        id SERIAL PRIMARY KEY,
+        project_key TEXT NOT NULL,
+        agent_name TEXT NOT NULL,
+        path_pattern TEXT NOT NULL,
+        exclusive BOOLEAN DEFAULT TRUE,
+        reason TEXT,
+        created_at BIGINT NOT NULL,
+        expires_at BIGINT NOT NULL,
+        released_at BIGINT
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_reservations_project ON reservations(project_key);
+      CREATE INDEX IF NOT EXISTS idx_reservations_agent ON reservations(agent_name);
+      CREATE INDEX IF NOT EXISTS idx_reservations_expires ON reservations(expires_at);
+      CREATE INDEX IF NOT EXISTS idx_reservations_active ON reservations(project_key, released_at) WHERE released_at IS NULL;
+
+      -- Locks table for distributed mutual exclusion (DurableLock)
+      CREATE TABLE IF NOT EXISTS locks (
+        resource TEXT PRIMARY KEY,
+        holder TEXT NOT NULL,
+        seq INTEGER NOT NULL DEFAULT 0,
+        acquired_at BIGINT NOT NULL,
+        expires_at BIGINT NOT NULL
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_locks_expires ON locks(expires_at);
+      CREATE INDEX IF NOT EXISTS idx_locks_holder ON locks(holder);
+    `,
+    down: `
+      DROP INDEX IF EXISTS idx_locks_holder;
+      DROP INDEX IF EXISTS idx_locks_expires;
+      DROP TABLE IF EXISTS locks;
+      DROP INDEX IF EXISTS idx_reservations_active;
+      DROP INDEX IF EXISTS idx_reservations_expires;
+      DROP INDEX IF EXISTS idx_reservations_agent;
+      DROP INDEX IF EXISTS idx_reservations_project;
+      DROP TABLE IF EXISTS reservations;
+      DROP INDEX IF EXISTS idx_recipients_agent;
+      DROP TABLE IF EXISTS message_recipients;
+      DROP INDEX IF EXISTS idx_messages_thread;
+      DROP INDEX IF EXISTS idx_messages_project;
+      DROP TABLE IF EXISTS messages;
+      DROP INDEX IF EXISTS idx_agents_project;
+      DROP TABLE IF EXISTS agents;
+      DROP INDEX IF EXISTS idx_events_project_type;
+      DROP INDEX IF EXISTS idx_events_timestamp;
+      DROP INDEX IF EXISTS idx_events_type;
+      DROP INDEX IF EXISTS idx_events_project_key;
+      DROP TABLE IF EXISTS events;
+    `,
+  },
+  {
     version: 1,
     description: "Add cursors table for DurableCursor",
     up: `
@@ -215,7 +332,7 @@ async function ensureVersionTable(db: PGlite): Promise<void> {
 /**
  * Get the current schema version
  *
- * Returns 0 if no migrations have been applied
+ * Returns -1 if no migrations have been applied (allows version 0 migrations)
  */
 export async function getCurrentVersion(db: PGlite): Promise<number> {
   await ensureVersionTable(db);
@@ -224,7 +341,9 @@ export async function getCurrentVersion(db: PGlite): Promise<number> {
     `SELECT MAX(version) as version FROM schema_version`,
   );
 
-  return result.rows[0]?.version ?? 0;
+  // Return -1 if no migrations applied (null from MAX on empty table)
+  // This allows version 0 migrations to be applied
+  return result.rows[0]?.version ?? -1;
 }
 
 /**
@@ -266,6 +385,7 @@ export async function runMigrations(db: PGlite): Promise<{
   const applied: number[] = [];
 
   // Find migrations that need to be applied
+  // currentVersion is -1 when no migrations applied, so version 0 will be included
   const pendingMigrations = migrations.filter(
     (m) => m.version > currentVersion,
   );
