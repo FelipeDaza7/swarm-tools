@@ -30,11 +30,11 @@ coverage/
 *.log
 npm-debug.log*
 
-# OpenCode runtime artifacts
-.opencode/streams/
+# OpenCode runtime artifacts (streams now in $TMPDIR, not project dir)
 .opencode/*.js
 .opencode/*.wasm
 .opencode/*.data
+.opencode/*.lock
 .opencode/node_modules/
 .opencode/bun.lock
 .npmrc

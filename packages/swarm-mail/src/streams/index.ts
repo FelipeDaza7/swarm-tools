@@ -36,6 +36,7 @@ import { PGlite } from "@electric-sql/pglite";
 import { existsSync, mkdirSync, appendFileSync } from "node:fs";
 import { join } from "node:path";
 import { homedir } from "node:os";
+import { acquireInitLock } from "./leader-election";
 
 // ============================================================================
 // Query Timeout Wrapper
@@ -245,6 +246,9 @@ export async function getDatabase(projectPath?: string): Promise<PGlite> {
 /**
  * Create and initialize a database instance
  *
+ * Uses file-based locking to prevent multiple processes from initializing
+ * PGLite simultaneously, which causes WASM corruption.
+ *
  * Separated from getDatabase for cleaner Promise-based caching logic
  */
 async function createDatabaseInstance(dbPath: string): Promise<PGlite> {
@@ -254,9 +258,16 @@ async function createDatabaseInstance(dbPath: string): Promise<PGlite> {
   debugLog("createDatabaseInstance called", { dbPath, cwd: process.cwd() });
 
   let db: PGlite;
+  let releaseLock: (() => Promise<void>) | null = null;
 
-  // Try to create new instance
+  // Try to create new instance with cross-process locking
   try {
+    // Acquire exclusive lock to prevent concurrent PGLite initialization
+    // This prevents WASM corruption when multiple swarm agents start simultaneously
+    debugLog("Acquiring init lock", { dbPath });
+    releaseLock = await acquireInitLock(dbPath);
+    debugLog("Init lock acquired");
+
     debugLog("Creating PGlite instance", { dbPath });
     db = new PGlite(dbPath);
     debugLog("PGlite instance created successfully");
@@ -305,6 +316,14 @@ async function createDatabaseInstance(dbPath: string): Promise<PGlite> {
       throw new Error(
         `Database initialization failed: ${err.message}. Fallback also failed: ${fallbackErr.message}`,
       );
+    }
+  } finally {
+    // Always release the lock after initialization (success or failure)
+    // PGLite handles its own internal file locking for ongoing operations
+    if (releaseLock) {
+      debugLog("Releasing init lock");
+      await releaseLock();
+      debugLog("Init lock released");
     }
   }
 }

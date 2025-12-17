@@ -43,12 +43,25 @@ export type {
 
 export {
   getSwarmMail,
+  getSwarmMailSocket,
   createInMemorySwarmMail,
   closeSwarmMail,
   closeAllSwarmMail,
   getDatabasePath,
+  getProjectTempDirName,
+  hashProjectPath,
   PGlite,
 } from "./pglite";
+
+// ============================================================================
+// Socket Adapter (postgres.js)
+// ============================================================================
+
+export {
+  wrapPostgres,
+  createSocketAdapter,
+} from "./socket-adapter";
+export type { SocketAdapterOptions } from "./socket-adapter";
 
 // ============================================================================
 // Re-export everything from streams for backward compatibility
@@ -61,3 +74,16 @@ export * from "./streams";
 // ============================================================================
 
 export * from "./hive";
+
+// ============================================================================
+// Daemon Lifecycle Management
+// ============================================================================
+
+export {
+  startDaemon,
+  stopDaemon,
+  isDaemonRunning,
+  healthCheck,
+  getPidFilePath,
+} from "./daemon";
+export type { DaemonOptions, DaemonInfo } from "./daemon";

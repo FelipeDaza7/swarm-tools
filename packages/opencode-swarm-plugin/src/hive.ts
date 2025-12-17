@@ -18,10 +18,13 @@ import { z } from "zod";
 import {
   createHiveAdapter,
   FlushManager,
+  importFromJSONL,
   type HiveAdapter,
   type Cell as AdapterCell,
   getSwarmMail,
 } from "swarm-mail";
+import { existsSync, readFileSync } from "node:fs";
+import { join } from "node:path";
 
 // ============================================================================
 // Working Directory Configuration
@@ -140,6 +143,9 @@ const adapterCache = new Map<string, HiveAdapter>();
 /**
  * Get or create a HiveAdapter instance for a project
  * Exported for testing - allows tests to verify state directly
+ * 
+ * On first initialization, checks for .beads/issues.jsonl and imports
+ * historical beads if the database is empty.
  */
 export async function getHiveAdapter(projectKey: string): Promise<HiveAdapter> {
   if (adapterCache.has(projectKey)) {
@@ -153,12 +159,64 @@ export async function getHiveAdapter(projectKey: string): Promise<HiveAdapter> {
   // Run migrations to ensure schema exists
   await adapter.runMigrations();
 
+  // Auto-migrate from JSONL if database is empty and file exists
+  await autoMigrateFromJSONL(adapter, projectKey);
+
   adapterCache.set(projectKey, adapter);
   return adapter;
 }
 
 // Legacy alias for backward compatibility
 export const getBeadsAdapter = getHiveAdapter;
+
+/**
+ * Auto-migrate cells from .hive/issues.jsonl if:
+ * 1. The JSONL file exists
+ * 2. The database has no cells for this project
+ * 
+ * This enables seamless migration from the old bd CLI to the new PGLite-based system.
+ */
+async function autoMigrateFromJSONL(adapter: HiveAdapter, projectKey: string): Promise<void> {
+  const jsonlPath = join(projectKey, ".hive", "issues.jsonl");
+  
+  // Check if JSONL file exists
+  if (!existsSync(jsonlPath)) {
+    return;
+  }
+
+  // Check if database already has cells
+  const existingCells = await adapter.queryCells(projectKey, { limit: 1 });
+  if (existingCells.length > 0) {
+    return; // Already have cells, skip migration
+  }
+
+  // Read and import JSONL
+  try {
+    const jsonlContent = readFileSync(jsonlPath, "utf-8");
+    const result = await importFromJSONL(adapter, projectKey, jsonlContent, {
+      skipExisting: true, // Safety: don't overwrite if somehow cells exist
+    });
+
+    if (result.created > 0 || result.updated > 0) {
+      console.log(
+        `[hive] Auto-migrated ${result.created} cells from ${jsonlPath} (${result.skipped} skipped, ${result.errors.length} errors)`
+      );
+    }
+
+    if (result.errors.length > 0) {
+      console.warn(
+        `[hive] Migration errors:`,
+        result.errors.slice(0, 5).map((e) => `${e.cellId}: ${e.error}`)
+      );
+    }
+  } catch (error) {
+    // Non-fatal - log and continue
+    console.warn(
+      `[hive] Failed to auto-migrate from ${jsonlPath}:`,
+      error instanceof Error ? error.message : String(error)
+    );
+  }
+}
 
 /**
  * Format adapter cell for output (map field names)

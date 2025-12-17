@@ -161,7 +161,7 @@ export async function exportToJSONL(
   }
 
   const query = `
-    SELECT * FROM beads
+    SELECT * FROM cells
     WHERE ${conditions.join(" AND ")}
     ORDER BY id ASC
   `;
@@ -248,11 +248,11 @@ export async function exportDirtyBeads(
 // ============================================================================
 
 /**
- * Import beads from JSONL string
+ * Import cells from JSONL string
  *
  * Features:
- * - Creates new beads
- * - Updates existing beads
+ * - Creates new cells
+ * - Updates existing cells
  * - Hash-based deduplication (skips if content unchanged)
  * - Imports dependencies, labels, comments
  * - Dry run mode for preview
@@ -264,7 +264,7 @@ export async function importFromJSONL(
   jsonl: string,
   options: ImportOptions = {}
 ): Promise<ImportResult> {
-  const beads = parseJSONL(jsonl);
+  const cells = parseJSONL(jsonl);
   const result: ImportResult = {
     created: 0,
     updated: 0,
@@ -272,9 +272,9 @@ export async function importFromJSONL(
     errors: [],
   };
 
-  for (const cellExport of beads) {
+  for (const cellExport of cells) {
     try {
-      await importSingleBead(adapter, projectKey, cellExport, options, result);
+      await importSingleCell(adapter, projectKey, cellExport, options, result);
     } catch (err) {
       result.errors.push({
         cellId: cellExport.id,
@@ -287,9 +287,9 @@ export async function importFromJSONL(
 }
 
 /**
- * Import a single bead
+ * Import a single cell
  */
-async function importSingleBead(
+async function importSingleCell(
   adapter: HiveAdapter,
   projectKey: string,
   cellExport: CellExport,
@@ -329,20 +329,32 @@ async function importSingleBead(
     return;
   }
 
-  // Import the bead
+  // Import the cell
   if (!existing) {
     // Create new - directly insert with specified ID
     const db = await adapter.getDatabase();
+    
+    // Determine status and closed_at together to satisfy check constraint
+    const status = cellExport.status === "tombstone" ? "closed" : cellExport.status;
+    const isClosed = status === "closed";
+    
+    // For closed cells, use closed_at from export or fall back to updated_at
+    const closedAt = isClosed
+      ? (cellExport.closed_at 
+          ? new Date(cellExport.closed_at).getTime() 
+          : new Date(cellExport.updated_at).getTime())
+      : null;
+    
     await db.query(
-      `INSERT INTO beads (
+      `INSERT INTO cells (
         id, project_key, type, status, title, description, priority,
-        parent_id, assignee, created_at, updated_at
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
+        parent_id, assignee, created_at, updated_at, closed_at
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`,
       [
         cellExport.id,
         projectKey,
         cellExport.issue_type,
-        cellExport.status === "tombstone" ? "closed" : cellExport.status,
+        status,
         cellExport.title,
         cellExport.description || null,
         cellExport.priority,
@@ -350,16 +362,9 @@ async function importSingleBead(
         cellExport.assignee || null,
         new Date(cellExport.created_at).getTime(),
         new Date(cellExport.updated_at).getTime(),
+        closedAt,
       ]
     );
-
-    // If status is closed, set closed_at
-    if (cellExport.status === "closed" && cellExport.closed_at) {
-      await db.query(
-        "UPDATE beads SET closed_at = $1 WHERE id = $2",
-        [new Date(cellExport.closed_at).getTime(), cellExport.id]
-      );
-    }
 
     // If it's a tombstone, mark as deleted
     if (cellExport.status === "tombstone") {
@@ -470,17 +475,22 @@ async function computeBeadHash(
 }
 
 /**
- * Import dependencies for a bead
+ * Import dependencies for a cell
  */
 async function importDependencies(
   adapter: HiveAdapter,
   projectKey: string,
   cellExport: CellExport
 ): Promise<void> {
+  // Skip if no dependencies
+  if (!cellExport.dependencies || cellExport.dependencies.length === 0) {
+    return;
+  }
+
   const db = await adapter.getDatabase();
 
   // Clear existing dependencies
-  await db.query("DELETE FROM bead_dependencies WHERE cell_id = $1", [
+  await db.query("DELETE FROM cell_dependencies WHERE cell_id = $1", [
     cellExport.id,
   ]);
 
@@ -503,10 +513,15 @@ async function importLabels(
   projectKey: string,
   cellExport: CellExport
 ): Promise<void> {
+  // Skip if no labels
+  if (!cellExport.labels || cellExport.labels.length === 0) {
+    return;
+  }
+
   const db = await adapter.getDatabase();
 
   // Clear existing labels
-  await db.query("DELETE FROM bead_labels WHERE cell_id = $1", [
+  await db.query("DELETE FROM cell_labels WHERE cell_id = $1", [
     cellExport.id,
   ]);
 
@@ -517,17 +532,22 @@ async function importLabels(
 }
 
 /**
- * Import comments for a bead
+ * Import comments for a cell
  */
 async function importComments(
   adapter: HiveAdapter,
   projectKey: string,
   cellExport: CellExport
 ): Promise<void> {
+  // Skip if no comments
+  if (!cellExport.comments || cellExport.comments.length === 0) {
+    return;
+  }
+
   const db = await adapter.getDatabase();
 
   // Clear existing comments (simple approach - could be smarter)
-  await db.query("DELETE FROM bead_comments WHERE cell_id = $1", [
+  await db.query("DELETE FROM cell_comments WHERE cell_id = $1", [
     cellExport.id,
   ]);
 
