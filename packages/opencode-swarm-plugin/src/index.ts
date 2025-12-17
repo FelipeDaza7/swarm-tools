@@ -41,6 +41,8 @@ import {
 } from "./swarm-mail";
 import { structuredTools } from "./structured";
 import { swarmTools } from "./swarm";
+import { worktreeTools } from "./swarm-worktree";
+import { reviewTools } from "./swarm-review";
 import { repoCrawlTools } from "./repo-crawl";
 import { skillsTools, setSkillsProjectDirectory } from "./skills";
 import { mandateTools } from "./mandates";
@@ -154,6 +156,8 @@ export const SwarmPlugin: Plugin = async (
       ...swarmMailTools,
       ...structuredTools,
       ...swarmTools,
+      ...worktreeTools,
+      ...reviewTools,
       ...repoCrawlTools,
       ...skillsTools,
       ...mandateTools,
@@ -410,6 +414,8 @@ export const allTools = {
   ...swarmMailTools,
   ...structuredTools,
   ...swarmTools,
+  ...worktreeTools,
+  ...reviewTools,
   ...repoCrawlTools,
   ...skillsTools,
   ...mandateTools,

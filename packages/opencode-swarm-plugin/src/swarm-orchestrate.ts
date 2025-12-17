@@ -68,6 +68,14 @@ import {
   warnMissingTool,
 } from "./tool-availability";
 import { listSkills } from "./skills";
+import {
+  canUseWorktreeIsolation,
+  getStartCommit,
+} from "./swarm-worktree";
+import {
+  isReviewApproved,
+  getReviewStatus,
+} from "./swarm-review";
 
 // ============================================================================
 // Helper Functions
@@ -583,6 +591,13 @@ export const swarm_init = tool({
       .string()
       .optional()
       .describe("Project path (for Agent Mail init)"),
+    isolation: tool.schema
+      .enum(["worktree", "reservation"])
+      .optional()
+      .default("reservation")
+      .describe(
+        "Isolation mode: 'worktree' for git worktree isolation (requires clean git state), 'reservation' for file reservations (default)",
+      ),
   },
   async execute(args) {
     // Check all tools
@@ -647,9 +662,53 @@ export const swarm_init = tool({
         "No skills found. Add skills to .opencode/skills/ or .claude/skills/ for specialized guidance.";
     }
 
+    // Check isolation mode
+    const isolationMode = args.isolation ?? "reservation";
+    let isolationInfo: {
+      mode: "worktree" | "reservation";
+      available: boolean;
+      start_commit?: string;
+      reason?: string;
+    } = {
+      mode: isolationMode,
+      available: true,
+    };
+
+    if (isolationMode === "worktree" && args.project_path) {
+      const worktreeCheck = await canUseWorktreeIsolation(args.project_path);
+      if (worktreeCheck.canUse) {
+        const startCommit = await getStartCommit(args.project_path);
+        isolationInfo = {
+          mode: "worktree",
+          available: true,
+          start_commit: startCommit ?? undefined,
+        };
+      } else {
+        // Fall back to reservation mode
+        isolationInfo = {
+          mode: "reservation",
+          available: false,
+          reason: `Worktree mode unavailable: ${worktreeCheck.reason}. Falling back to reservation mode.`,
+        };
+        warnings.push(
+          `⚠️  Worktree isolation unavailable: ${worktreeCheck.reason}. Using file reservations instead.`,
+        );
+      }
+    } else if (isolationMode === "worktree" && !args.project_path) {
+      isolationInfo = {
+        mode: "reservation",
+        available: false,
+        reason: "Worktree mode requires project_path. Falling back to reservation mode.",
+      };
+      warnings.push(
+        "⚠️  Worktree isolation requires project_path. Using file reservations instead.",
+      );
+    }
+
     return JSON.stringify(
       {
         ready: true,
+        isolation: isolationInfo,
         tool_availability: Object.fromEntries(
           Array.from(availability.entries()).map(([k, v]) => [
             k,
@@ -671,6 +730,10 @@ export const swarm_init = tool({
           agent_mail: agentMailAvailable
             ? "✓ Use Agent Mail for coordination"
             : "Start Agent Mail: agent-mail serve",
+          isolation:
+            isolationInfo.mode === "worktree"
+              ? "✓ Using git worktree isolation"
+              : "✓ Using file reservation isolation",
         },
         report,
       },
@@ -1030,12 +1093,63 @@ export const swarm_complete = tool({
       .number()
       .optional()
       .describe("Number of retry attempts during task"),
+    skip_review: tool.schema
+      .boolean()
+      .optional()
+      .describe(
+        "Skip review gate check (default: false). Use only for tasks that don't require coordinator review.",
+      ),
   },
   async execute(args, _ctx) {
-    // Extract epic ID early for error notifications
+    // Extract epic ID early for error notifications and review gate
     const epicId = args.bead_id.includes(".")
       ? args.bead_id.split(".")[0]
       : args.bead_id;
+
+    // Check review gate (unless skipped) - BEFORE try block so errors are clear
+    if (!args.skip_review) {
+      const reviewStatusResult = getReviewStatus(args.bead_id);
+
+      if (!reviewStatusResult.approved) {
+        // Check if review was even attempted
+        if (!reviewStatusResult.reviewed) {
+          return JSON.stringify(
+            {
+              success: false,
+              error: "Review required before completion",
+              review_status: reviewStatusResult,
+              hint: `This task requires coordinator review before completion.
+
+**Next steps:**
+1. Request review with swarm_review(project_key="${args.project_key}", epic_id="${epicId}", task_id="${args.bead_id}", files_touched=[...])
+2. Wait for coordinator to review and approve with swarm_review_feedback
+3. Once approved, call swarm_complete again
+
+Or use skip_review=true to bypass (not recommended for production work).`,
+            },
+            null,
+            2,
+          );
+        }
+
+        // Review was attempted but not approved
+        return JSON.stringify(
+          {
+            success: false,
+            error: "Review not approved",
+            review_status: reviewStatusResult,
+            hint: `Task was reviewed but not approved. ${reviewStatusResult.remaining_attempts} attempt(s) remaining.
+
+**Next steps:**
+1. Address the feedback from the reviewer
+2. Request another review with swarm_review
+3. Once approved, call swarm_complete again`,
+          },
+          null,
+          2,
+        );
+      }
+    }
 
     try {
       // Verify agent is registered in swarm-mail
