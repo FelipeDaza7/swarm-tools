@@ -870,25 +870,148 @@ export const hiveTools = {
   hive_link_thread,
 };
 
-// Legacy aliases for backward compatibility
-export const beads_create = hive_create;
-export const beads_create_epic = hive_create_epic;
-export const beads_query = hive_query;
-export const beads_update = hive_update;
-export const beads_close = hive_close;
-export const beads_start = hive_start;
-export const beads_ready = hive_ready;
-export const beads_sync = hive_sync;
-export const beads_link_thread = hive_link_thread;
+// ============================================================================
+// Deprecation Warning System
+// ============================================================================
 
+/**
+ * Track which deprecated tools have been warned about.
+ * Only warn once per tool name to avoid spam.
+ */
+const warnedTools = new Set<string>();
+
+/**
+ * Log a deprecation warning for a renamed tool.
+ * Only warns once per tool name per session.
+ * 
+ * @param oldName - The deprecated tool name (e.g., "beads_create")
+ * @param newName - The new tool name to use instead (e.g., "hive_create")
+ */
+function warnDeprecated(oldName: string, newName: string): void {
+  if (warnedTools.has(oldName)) {
+    return; // Already warned
+  }
+  
+  warnedTools.add(oldName);
+  console.warn(
+    `[DEPRECATED] ${oldName} is deprecated, use ${newName} instead. Will be removed in v1.0`
+  );
+}
+
+// ============================================================================
+// Legacy Aliases (DEPRECATED - use hive_* instead)
+// ============================================================================
+
+/**
+ * @deprecated Use hive_create instead. Will be removed in v1.0
+ */
+export const beads_create = tool({
+  ...hive_create,
+  async execute(args, ctx) {
+    warnDeprecated('beads_create', 'hive_create');
+    return hive_create.execute(args, ctx);
+  }
+});
+
+/**
+ * @deprecated Use hive_create_epic instead. Will be removed in v1.0
+ */
+export const beads_create_epic = tool({
+  ...hive_create_epic,
+  async execute(args, ctx) {
+    warnDeprecated('beads_create_epic', 'hive_create_epic');
+    return hive_create_epic.execute(args, ctx);
+  }
+});
+
+/**
+ * @deprecated Use hive_query instead. Will be removed in v1.0
+ */
+export const beads_query = tool({
+  ...hive_query,
+  async execute(args, ctx) {
+    warnDeprecated('beads_query', 'hive_query');
+    return hive_query.execute(args, ctx);
+  }
+});
+
+/**
+ * @deprecated Use hive_update instead. Will be removed in v1.0
+ */
+export const beads_update = tool({
+  ...hive_update,
+  async execute(args, ctx) {
+    warnDeprecated('beads_update', 'hive_update');
+    return hive_update.execute(args, ctx);
+  }
+});
+
+/**
+ * @deprecated Use hive_close instead. Will be removed in v1.0
+ */
+export const beads_close = tool({
+  ...hive_close,
+  async execute(args, ctx) {
+    warnDeprecated('beads_close', 'hive_close');
+    return hive_close.execute(args, ctx);
+  }
+});
+
+/**
+ * @deprecated Use hive_start instead. Will be removed in v1.0
+ */
+export const beads_start = tool({
+  ...hive_start,
+  async execute(args, ctx) {
+    warnDeprecated('beads_start', 'hive_start');
+    return hive_start.execute(args, ctx);
+  }
+});
+
+/**
+ * @deprecated Use hive_ready instead. Will be removed in v1.0
+ */
+export const beads_ready = tool({
+  ...hive_ready,
+  async execute(args, ctx) {
+    warnDeprecated('beads_ready', 'hive_ready');
+    return hive_ready.execute(args, ctx);
+  }
+});
+
+/**
+ * @deprecated Use hive_sync instead. Will be removed in v1.0
+ */
+export const beads_sync = tool({
+  ...hive_sync,
+  async execute(args, ctx) {
+    warnDeprecated('beads_sync', 'hive_sync');
+    return hive_sync.execute(args, ctx);
+  }
+});
+
+/**
+ * @deprecated Use hive_link_thread instead. Will be removed in v1.0
+ */
+export const beads_link_thread = tool({
+  ...hive_link_thread,
+  async execute(args, ctx) {
+    warnDeprecated('beads_link_thread', 'hive_link_thread');
+    return hive_link_thread.execute(args, ctx);
+  }
+});
+
+/**
+ * @deprecated Use hiveTools instead. Will be removed in v1.0
+ */
 export const beadsTools = {
-  beads_create: hive_create,
-  beads_create_epic: hive_create_epic,
-  beads_query: hive_query,
-  beads_update: hive_update,
-  beads_close: hive_close,
-  beads_start: hive_start,
-  beads_ready: hive_ready,
-  beads_sync: hive_sync,
-  beads_link_thread: hive_link_thread,
+  beads_create,
+  beads_create_epic,
+  beads_query,
+  beads_update,
+  beads_close,
+  beads_start,
+  beads_ready,
+  beads_sync,
+  beads_link_thread,
 };
