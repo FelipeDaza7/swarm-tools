@@ -609,3 +609,21 @@ export {
   type GuardrailResult,
   type GuardrailMetrics,
 } from "./output-guardrails";
+
+/**
+ * Re-export compaction-hook module
+ *
+ * Includes:
+ * - SWARM_COMPACTION_CONTEXT - Prompt text for swarm state preservation
+ * - createCompactionHook - Factory function for the compaction hook
+ *
+ * Usage:
+ * ```typescript
+ * import { createCompactionHook } from "opencode-swarm-plugin";
+ *
+ * const hooks = {
+ *   "experimental.session.compacting": createCompactionHook(),
+ * };
+ * ```
+ */
+export { SWARM_COMPACTION_CONTEXT, createCompactionHook } from "./compaction-hook";
