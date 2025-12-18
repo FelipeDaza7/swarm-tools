@@ -127,6 +127,32 @@ const instances = new Map<
 >();
 
 /**
+ * Promise cache for in-flight initializations
+ *
+ * Prevents race conditions when multiple callers try to initialize the same database.
+ */
+const initPromises = new Map<string, Promise<SwarmMailAdapter>>();
+
+/**
+ * Format an error for display in error messages
+ *
+ * Handles Error objects, strings, and arbitrary values.
+ * For objects, attempts JSON serialization with property names.
+ *
+ * @param error - The error to format
+ * @returns Formatted error string
+ */
+function formatError(error: unknown): string {
+  if (error instanceof Error) return error.message;
+  if (typeof error === 'string') return error;
+  try {
+    return JSON.stringify(error, Object.getOwnPropertyNames(error));
+  } catch {
+    return String(error);
+  }
+}
+
+/**
  * Check if an error is a WASM abort error from PGLite
  *
  * These errors occur when:
@@ -178,7 +204,11 @@ async function createPGliteWithRecovery(dbPath: string): Promise<PGlite> {
       );
 
       // Delete the corrupted database directory
-      if (existsSync(dbPath)) {
+      // Before deletion, check if another process already cleaned up
+      if (!existsSync(dbPath)) {
+        console.log("[swarm-mail] Database already cleaned up by another process");
+        // Proceed to create fresh instance
+      } else {
         rmSync(dbPath, { recursive: true, force: true });
       }
 
@@ -186,11 +216,11 @@ async function createPGliteWithRecovery(dbPath: string): Promise<PGlite> {
       try {
         const pglite = new PGlite(dbPath);
         await pglite.query("SELECT 1");
-        console.log("[swarm-mail] Successfully recovered from corrupted database");
+        console.log(`[swarm-mail] Successfully recovered from corrupted database: ${dbPath}`);
         return pglite;
       } catch (retryError) {
         throw new Error(
-          `Failed to recover PGLite database after deleting corrupted data: ${retryError instanceof Error ? retryError.message : String(retryError)}`
+          `Failed to recover PGLite database after deleting corrupted data: ${formatError(retryError)}`
         );
       }
     }
@@ -237,7 +267,18 @@ export async function getSwarmMail(
   const dbPath = getDatabasePath(projectPath);
   const projectKey = projectPath || dbPath;
 
-  if (!instances.has(dbPath)) {
+  // Return existing instance
+  if (instances.has(dbPath)) {
+    return instances.get(dbPath)!.adapter;
+  }
+
+  // Return in-flight initialization
+  if (initPromises.has(dbPath)) {
+    return initPromises.get(dbPath)!;
+  }
+
+  // Start new initialization
+  const initPromise = (async () => {
     // Check for socket mode via env var
     const useSocket = process.env.SWARM_MAIL_SOCKET === 'true';
 
@@ -262,9 +303,17 @@ export async function getSwarmMail(
     const adapter = createSwarmMailAdapter(db, projectKey);
     await adapter.runMigrations();
     instances.set(dbPath, { adapter, pglite });
-  }
+    return adapter;
+  })();
 
-  return instances.get(dbPath)!.adapter;
+  initPromises.set(dbPath, initPromise);
+
+  try {
+    const adapter = await initPromise;
+    return adapter;
+  } finally {
+    initPromises.delete(dbPath);
+  }
 }
 
 /**

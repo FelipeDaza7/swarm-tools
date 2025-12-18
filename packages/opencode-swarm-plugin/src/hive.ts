@@ -1094,7 +1094,7 @@ export const hive_sync = tool({
 export const hive_link_thread = tool({
   description: "Add metadata linking cell to Agent Mail thread",
   args: {
-    cell_id: tool.schema.string().describe("Cell ID"),
+    bead_id: tool.schema.string().describe("Cell ID"),
     thread_id: tool.schema.string().describe("Agent Mail thread ID"),
   },
   async execute(args, ctx) {
@@ -1102,11 +1102,11 @@ export const hive_link_thread = tool({
     const adapter = await getHiveAdapter(projectKey);
 
     try {
-      const cell = await adapter.getCell(projectKey, args.cell_id);
+      const cell = await adapter.getCell(projectKey, args.bead_id);
 
       if (!cell) {
         throw new HiveError(
-          `Cell not found: ${args.cell_id}`,
+          `Cell not found: ${args.bead_id}`,
           "hive_link_thread",
         );
       }
@@ -1115,20 +1115,20 @@ export const hive_link_thread = tool({
       const threadMarker = `[thread:${args.thread_id}]`;
 
       if (existingDesc.includes(threadMarker)) {
-        return `Cell ${args.cell_id} already linked to thread ${args.thread_id}`;
+        return `Cell ${args.bead_id} already linked to thread ${args.thread_id}`;
       }
 
       const newDesc = existingDesc
         ? `${existingDesc}\n\n${threadMarker}`
         : threadMarker;
 
-      await adapter.updateCell(projectKey, args.cell_id, {
+      await adapter.updateCell(projectKey, args.bead_id, {
         description: newDesc,
       });
 
-      await adapter.markDirty(projectKey, args.cell_id);
+      await adapter.markDirty(projectKey, args.bead_id);
 
-      return `Linked cell ${args.cell_id} to thread ${args.thread_id}`;
+      return `Linked cell ${args.bead_id} to thread ${args.thread_id}`;
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       throw new HiveError(

@@ -521,7 +521,7 @@ describe("beads integration", () => {
     it("links a bead to an Agent Mail thread", async () => {
       const threadId = "test-thread-123";
       const result = await beads_link_thread.execute(
-        { cell_id: testBeadId, thread_id: threadId },
+        { bead_id: testBeadId, thread_id: threadId },
         mockContext,
       );
 
@@ -540,13 +540,13 @@ describe("beads integration", () => {
 
       // Link once
       await beads_link_thread.execute(
-        { cell_id: testBeadId, thread_id: threadId },
+        { bead_id: testBeadId, thread_id: threadId },
         mockContext,
       );
 
       // Try to link again
       const result = await beads_link_thread.execute(
-        { cell_id: testBeadId, thread_id: threadId },
+        { bead_id: testBeadId, thread_id: threadId },
         mockContext,
       );
 
@@ -562,7 +562,7 @@ describe("beads integration", () => {
 
       const threadId = "test-thread-789";
       await beads_link_thread.execute(
-        { cell_id: testBeadId, thread_id: threadId },
+        { bead_id: testBeadId, thread_id: threadId },
         mockContext,
       );
 
@@ -576,7 +576,7 @@ describe("beads integration", () => {
     it("throws BeadError for invalid bead ID", async () => {
       await expect(
         beads_link_thread.execute(
-          { cell_id: "nonexistent-bead-xyz", thread_id: "thread-123" },
+          { bead_id: "nonexistent-bead-xyz", thread_id: "thread-123" },
           mockContext,
         ),
       ).rejects.toThrow(BeadError);
