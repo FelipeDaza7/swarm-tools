@@ -36,11 +36,6 @@ jobs:
       - name: Setup npmrc
         run: echo "//registry.npmjs.org/:_authToken=${{ secrets.NPM_TOKEN }}" > .npmrc
 
-      # Publish any unpublished versions first (handles post-merge case)
-      - name: Publish unpublished versions
-        run: bun run ci:publish
-        continue-on-error: true
-
       - name: Create Release Pull Request or Publish
         id: changesets
         uses: changesets/action@v1
@@ -51,3 +46,8 @@ jobs:
           commit: "chore: release packages"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      # If no changesets, publish any unpublished versions
+      - name: Publish unpublished versions
+        if: steps.changesets.outputs.hasChangesets == 'false'
+        run: bun run ci:publish
