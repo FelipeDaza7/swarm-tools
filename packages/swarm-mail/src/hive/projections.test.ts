@@ -13,6 +13,7 @@
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { PGlite } from "@electric-sql/pglite";
+import { vector } from "@electric-sql/pglite/vector";
 import { runMigrations } from "../streams/migrations.js";
 import { beadsMigration } from "./migrations.js";
 import type { DatabaseAdapter } from "../types/database.js";
@@ -53,7 +54,7 @@ describe("Beads Migrations", () => {
   let db: DatabaseAdapter;
 
   beforeEach(async () => {
-    pglite = new PGlite();
+    pglite = await PGlite.create({ extensions: { vector } });
     db = wrapPGlite(pglite);
 
     // Run base migrations (v1-v5)
@@ -122,7 +123,7 @@ describe("Beads Projections", () => {
   const projectKey = "/test/project";
 
   beforeEach(async () => {
-    pglite = new PGlite();
+    pglite = await PGlite.create({ extensions: { vector } });
     db = wrapPGlite(pglite);
     await runMigrations(pglite);
 

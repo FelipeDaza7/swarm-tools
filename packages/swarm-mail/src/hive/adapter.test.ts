@@ -15,6 +15,7 @@
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { PGlite } from "@electric-sql/pglite";
+import { vector } from "@electric-sql/pglite/vector";
 import { beadsMigration } from "./migrations.js";
 import type { DatabaseAdapter } from "../types/database.js";
 import { createHiveAdapter } from "./adapter.js";
@@ -41,7 +42,7 @@ describe("Beads Adapter", () => {
 
   beforeEach(async () => {
     // Create isolated in-memory instance for tests
-    pglite = new PGlite();
+    pglite = await PGlite.create({ extensions: { vector } });
     
     // Initialize the core events table
     await pglite.exec(`

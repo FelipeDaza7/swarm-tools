@@ -11,6 +11,7 @@
 
 import { describe, test, expect, beforeEach, afterEach } from "bun:test";
 import { PGlite } from "@electric-sql/pglite";
+import { vector } from "@electric-sql/pglite/vector";
 import type { DatabaseAdapter } from "../types/database.js";
 import { beadsMigration, cellsViewMigration, hiveMigrations } from "./migrations.js";
 
@@ -29,7 +30,7 @@ describe("Hive Migrations", () => {
   let db: DatabaseAdapter;
 
   beforeEach(async () => {
-    pglite = new PGlite();
+    pglite = await PGlite.create({ extensions: { vector } });
     db = wrapPGlite(pglite);
 
     // Create base schema (events table, schema_version)

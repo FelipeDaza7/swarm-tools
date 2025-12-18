@@ -87,3 +87,30 @@ export {
   getPidFilePath,
 } from "./daemon";
 export type { DaemonOptions, DaemonInfo } from "./daemon";
+
+// ============================================================================
+// Memory Module Exports (semantic memory store)
+// ============================================================================
+
+export {
+  createMemoryStore,
+  EMBEDDING_DIM,
+} from "./memory/store";
+export type {
+  Memory,
+  SearchResult,
+  SearchOptions,
+} from "./memory/store";
+
+export {
+  Ollama,
+  OllamaError,
+  getDefaultConfig,
+  makeOllamaLive,
+} from "./memory/ollama";
+export type { MemoryConfig } from "./memory/ollama";
+
+export {
+  memoryMigration,
+  memoryMigrations,
+} from "./memory/migrations";

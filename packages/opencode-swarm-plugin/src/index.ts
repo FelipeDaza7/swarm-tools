@@ -46,6 +46,7 @@ import { reviewTools } from "./swarm-review";
 import { repoCrawlTools } from "./repo-crawl";
 import { skillsTools, setSkillsProjectDirectory } from "./skills";
 import { mandateTools } from "./mandates";
+import { memoryTools } from "./memory-tools";
 import {
   guardrailOutput,
   DEFAULT_GUARDRAIL_CONFIG,
@@ -69,6 +70,7 @@ import {
  * - repo-crawl:* - GitHub API tools for repository research
  * - skills:* - Agent skills discovery, activation, and execution
  * - mandate:* - Agent voting system for collaborative knowledge curation
+ * - semantic-memory:* - Semantic memory with vector embeddings (Ollama + PGLite)
  *
  * @param input - Plugin context from OpenCode
  * @returns Plugin hooks including tools, events, and tool execution hooks
@@ -148,9 +150,10 @@ export const SwarmPlugin: Plugin = async (
      * - beads:* - Legacy aliases (deprecated, use hive:* instead)
      * - agent-mail:init, agent-mail:send, agent-mail:reserve, etc. (legacy MCP)
      * - swarm-mail:init, swarm-mail:send, swarm-mail:reserve, etc. (embedded)
-     * - repo-crawl:readme, repo-crawl:structure, etc.
-     * - mandate:file, mandate:vote, mandate:query, etc.
-     */
+ * - repo-crawl:readme, repo-crawl:structure, etc.
+ * - mandate:file, mandate:vote, mandate:query, etc.
+ * - semantic-memory:store, semantic-memory:find, semantic-memory:get, etc.
+ */
     tool: {
       ...hiveTools,
       ...swarmMailTools,
@@ -161,6 +164,7 @@ export const SwarmPlugin: Plugin = async (
       ...repoCrawlTools,
       ...skillsTools,
       ...mandateTools,
+      ...memoryTools,
     },
 
     /**
@@ -417,6 +421,7 @@ export const allTools = {
   ...repoCrawlTools,
   ...skillsTools,
   ...mandateTools,
+  ...memoryTools,
 } as const;
 
 /**
@@ -644,3 +649,33 @@ export {
  * ```
  */
 export { SWARM_COMPACTION_CONTEXT, createCompactionHook } from "./compaction-hook";
+
+/**
+ * Re-export memory module
+ *
+ * Includes:
+ * - memoryTools - All semantic-memory tools (store, find, get, remove, validate, list, stats, check)
+ * - createMemoryAdapter - Factory function for memory adapter
+ * - resetMemoryCache - Cache management for testing
+ *
+ * Types:
+ * - MemoryAdapter - Memory adapter interface
+ * - StoreArgs, FindArgs, IdArgs, ListArgs - Tool argument types
+ * - StoreResult, FindResult, StatsResult, HealthResult, OperationResult - Result types
+ */
+export {
+  memoryTools,
+  createMemoryAdapter,
+  resetMemoryCache,
+  type MemoryAdapter,
+  type StoreArgs,
+  type FindArgs,
+  type IdArgs,
+  type ListArgs,
+  type StoreResult,
+  type FindResult,
+  type StatsResult,
+  type HealthResult,
+  type OperationResult,
+} from "./memory-tools";
+export type { Memory, SearchResult, SearchOptions } from "swarm-mail";

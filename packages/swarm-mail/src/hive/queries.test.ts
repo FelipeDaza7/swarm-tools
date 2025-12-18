@@ -6,6 +6,7 @@
 
 import { describe, test, expect, beforeEach, afterEach } from "bun:test";
 import { PGlite } from "@electric-sql/pglite";
+import { vector } from "@electric-sql/pglite/vector";
 import { wrapPGlite } from "../pglite.js";
 import { createHiveAdapter } from "./adapter.js";
 import type { DatabaseAdapter } from "../types/database.js";
@@ -26,7 +27,7 @@ describe("beads/queries", () => {
 
   beforeEach(async () => {
     // Create in-memory PGlite instance
-    pglite = new PGlite();
+    pglite = await PGlite.create({ extensions: { vector } });
    db = wrapPGlite(pglite);
 
     // Initialize core schema (creates events table)

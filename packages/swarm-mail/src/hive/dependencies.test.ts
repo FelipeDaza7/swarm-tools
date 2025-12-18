@@ -12,6 +12,7 @@
 
 import { describe, test, expect, beforeEach } from "bun:test";
 import { PGlite } from "@electric-sql/pglite";
+import { vector } from "@electric-sql/pglite/vector";
 import { createHiveAdapter } from "./adapter.js";
 import type { HiveAdapter } from "../types/hive-adapter.js";
 import type { DatabaseAdapter } from "../types/database.js";
@@ -35,7 +36,7 @@ describe("Dependencies", () => {
   const projectKey = "/test/project";
 
   beforeEach(async () => {
-    const pglite = new PGlite();
+    const pglite = await PGlite.create({ extensions: { vector } });
     db = wrapPGlite(pglite);
     
     // Create minimal events table (required by beads event store)

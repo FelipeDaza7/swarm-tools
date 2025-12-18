@@ -12,6 +12,7 @@
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { PGlite } from "@electric-sql/pglite";
+import { vector } from "@electric-sql/pglite/vector";
 import { getDatabase } from "../streams/index.js";
 import { beadsMigration } from "./migrations.js";
 import type { DatabaseAdapter } from "../types/database.js";
@@ -54,7 +55,7 @@ describe("Bead Event Store", () => {
   beforeEach(async () => {
     // Create isolated in-memory instance for tests to avoid singleton conflicts
     // getDatabase() uses a singleton that persists across tests and causes "PGlite is closed" errors
-    pglite = new PGlite(); // In-memory, isolated instance
+    pglite = await PGlite.create({ extensions: { vector } }); // In-memory, isolated instance
     
     // Initialize the core events table (same as getDatabase() does via initializeSchema())
     // This is the base schema needed before beads migration

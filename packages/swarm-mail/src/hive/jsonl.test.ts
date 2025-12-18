@@ -13,6 +13,7 @@
 
 import { describe, it, expect, beforeEach, afterEach } from "bun:test";
 import { PGlite } from "@electric-sql/pglite";
+import { vector } from "@electric-sql/pglite/vector";
 import { beadsMigration, hiveMigrations } from "./migrations.js";
 import { createHiveAdapter } from "./adapter.js";
 import type { HiveAdapter } from "../types/hive-adapter.js";
@@ -43,7 +44,7 @@ describe("JSONL Export/Import", () => {
   const projectKey = "/test/jsonl";
 
   beforeEach(async () => {
-    pglite = new PGlite();
+    pglite = await PGlite.create({ extensions: { vector } });
     
     // Initialize events table and schema_version
     await pglite.exec(`

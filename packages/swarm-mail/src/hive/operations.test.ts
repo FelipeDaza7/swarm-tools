@@ -7,6 +7,7 @@
 
 import { describe, it, expect, beforeEach } from "bun:test";
 import { PGlite } from "@electric-sql/pglite";
+import { vector } from "@electric-sql/pglite/vector";
 import type { DatabaseAdapter } from "../types/database.js";
 import { createHiveAdapter } from "./adapter.js";
 import {
@@ -39,7 +40,7 @@ describe("operations", () => {
 
   beforeEach(async () => {
     // In-memory database for testing
-    const pglite = new PGlite();
+    const pglite = await PGlite.create({ extensions: { vector } });
     
     // Initialize core tables (events and schema_version)
     await pglite.exec(`

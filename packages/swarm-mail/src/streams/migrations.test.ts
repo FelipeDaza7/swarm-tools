@@ -3,6 +3,7 @@
  */
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { PGlite } from "@electric-sql/pglite";
+import { vector } from "@electric-sql/pglite/vector";
 import {
   runMigrations,
   getCurrentVersion,
@@ -17,8 +18,8 @@ describe("Schema Migrations", () => {
   let db: PGlite;
 
   beforeEach(async () => {
-    // Use in-memory database for tests
-    db = new PGlite();
+    // Use in-memory database for tests with vector extension
+    db = await PGlite.create({ extensions: { vector } });
   });
 
   afterEach(async () => {
@@ -34,11 +35,12 @@ describe("Schema Migrations", () => {
     it("should run all migrations on fresh database", async () => {
       const result = await runMigrations(db);
 
-      expect(result.applied).toEqual([0, 1, 2, 3, 4, 5, 6]);
-      expect(result.current).toBe(6);
+      // Migrations 0-6 (streams), 7-8 (hive), 9 (memory)
+      expect(result.applied).toEqual([0, 1, 2, 3, 4, 5, 6, 7, 8, 9]);
+      expect(result.current).toBe(9);
 
       const version = await getCurrentVersion(db);
-      expect(version).toBe(6);
+      expect(version).toBe(9);
     });
 
     it("should create cursors table with correct schema", async () => {
@@ -105,16 +107,16 @@ describe("Schema Migrations", () => {
     it("should be safe to run migrations multiple times", async () => {
       // First run
       const result1 = await runMigrations(db);
-      expect(result1.applied).toEqual([0, 1, 2, 3, 4, 5, 6]);
+      expect(result1.applied).toEqual([0, 1, 2, 3, 4, 5, 6, 7, 8, 9]);
 
       // Second run - should apply nothing
       const result2 = await runMigrations(db);
       expect(result2.applied).toEqual([]);
-      expect(result2.current).toBe(6);
+      expect(result2.current).toBe(9);
 
-      // Version should still be 5
+      // Version should still be 9
       const version = await getCurrentVersion(db);
-      expect(version).toBe(6);
+      expect(version).toBe(9);
     });
   });
 
@@ -141,10 +143,10 @@ describe("Schema Migrations", () => {
         [1, Date.now(), migrations[1]!.description],
       );
 
-      // Now run migrations - should only apply 2-5
+      // Now run migrations - should only apply 2-9
       const result = await runMigrations(db);
-      expect(result.applied).toEqual([2, 3, 4, 5, 6]);
-      expect(result.current).toBe(6);
+      expect(result.applied).toEqual([2, 3, 4, 5, 6, 7, 8, 9]);
+      expect(result.current).toBe(9);
     });
   });
 
@@ -152,11 +154,11 @@ describe("Schema Migrations", () => {
     it("should rollback to target version", async () => {
       // Apply all migrations
       await runMigrations(db);
-      expect(await getCurrentVersion(db)).toBe(6);
+      expect(await getCurrentVersion(db)).toBe(9);
 
       // Rollback to version 1
       const result = await rollbackTo(db, 1);
-      expect(result.rolledBack).toEqual([6, 5, 4, 3, 2]);
+      expect(result.rolledBack).toEqual([9, 8, 7, 6, 5, 4, 3, 2]);
       expect(result.current).toBe(1);
 
       // Version should be 1
@@ -186,7 +188,7 @@ describe("Schema Migrations", () => {
       await runMigrations(db);
 
       const result = await rollbackTo(db, 0);
-      expect(result.rolledBack).toEqual([6, 5, 4, 3, 2, 1]);
+      expect(result.rolledBack).toEqual([9, 8, 7, 6, 5, 4, 3, 2, 1]);
       expect(result.current).toBe(0);
 
       // All tables should be gone
@@ -202,9 +204,9 @@ describe("Schema Migrations", () => {
     it("should do nothing if target version >= current", async () => {
       await runMigrations(db);
 
-      const result = await rollbackTo(db, 6);
+      const result = await rollbackTo(db, 9);
       expect(result.rolledBack).toEqual([]);
-      expect(result.current).toBe(6);
+      expect(result.current).toBe(9);
     });
   });
 
@@ -220,12 +222,15 @@ describe("Schema Migrations", () => {
       expect(await isMigrationApplied(db, 4)).toBe(true);
       expect(await isMigrationApplied(db, 5)).toBe(true);
       expect(await isMigrationApplied(db, 6)).toBe(true);
+      expect(await isMigrationApplied(db, 7)).toBe(true);
+      expect(await isMigrationApplied(db, 8)).toBe(true);
+      expect(await isMigrationApplied(db, 9)).toBe(true);
     });
 
     it("should list pending migrations", async () => {
       const pending1 = await getPendingMigrations(db);
-      expect(pending1).toHaveLength(7);
-      expect(pending1.map((m) => m.version)).toEqual([0, 1, 2, 3, 4, 5, 6]);
+      expect(pending1).toHaveLength(10);
+      expect(pending1.map((m) => m.version)).toEqual([0, 1, 2, 3, 4, 5, 6, 7, 8, 9]);
 
       // Apply migrations 0 and 1
       const migration0 = migrations[0];
@@ -253,8 +258,8 @@ describe("Schema Migrations", () => {
       );
 
       const pending2 = await getPendingMigrations(db);
-      expect(pending2).toHaveLength(5);
-      expect(pending2.map((m) => m.version)).toEqual([2, 3, 4, 5, 6]);
+      expect(pending2).toHaveLength(8);
+      expect(pending2.map((m) => m.version)).toEqual([2, 3, 4, 5, 6, 7, 8, 9]);
     });
 
     it("should list applied migrations", async () => {
@@ -264,8 +269,8 @@ describe("Schema Migrations", () => {
       await runMigrations(db);
 
       const applied2 = await getAppliedMigrations(db);
-      expect(applied2).toHaveLength(7);
-      expect(applied2.map((m) => m.version)).toEqual([0, 1, 2, 3, 4, 5, 6]);
+      expect(applied2).toHaveLength(10);
+      expect(applied2.map((m) => m.version)).toEqual([0, 1, 2, 3, 4, 5, 6, 7, 8, 9]);
       expect(applied2[0]?.description).toBe(
         "Create core event store tables",
       );
@@ -370,7 +375,7 @@ describe("Schema Migrations", () => {
         `SELECT version, applied_at, description FROM schema_version ORDER BY version`,
       );
 
-      expect(result.rows).toHaveLength(7);
+      expect(result.rows).toHaveLength(10);
       expect(result.rows[0]?.version).toBe(0);
       expect(result.rows[0]?.description).toBe(
         "Create core event store tables",

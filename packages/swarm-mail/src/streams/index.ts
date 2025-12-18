@@ -33,6 +33,7 @@
  * or ~/.opencode/streams.db (global fallback)
  */
 import { PGlite } from "@electric-sql/pglite";
+import { vector } from "@electric-sql/pglite/vector";
 import { existsSync, mkdirSync, appendFileSync } from "node:fs";
 import { join } from "node:path";
 import { homedir } from "node:os";
@@ -269,7 +270,7 @@ async function createDatabaseInstance(dbPath: string): Promise<PGlite> {
     debugLog("Init lock acquired");
 
     debugLog("Creating PGlite instance", { dbPath });
-    db = new PGlite(dbPath);
+    db = await PGlite.create({ dataDir: dbPath, extensions: { vector } });
     debugLog("PGlite instance created successfully");
 
     // Initialize schema if needed
@@ -300,7 +301,7 @@ async function createDatabaseInstance(dbPath: string): Promise<PGlite> {
     );
 
     try {
-      db = new PGlite(); // in-memory mode
+      db = await PGlite.create({ extensions: { vector } }); // in-memory mode
 
       // Initialize schema for in-memory instance
       await initializeSchema(db);

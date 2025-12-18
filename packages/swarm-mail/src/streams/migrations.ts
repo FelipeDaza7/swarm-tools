@@ -41,6 +41,8 @@
  * @module migrations
  */
 import type { PGlite } from "@electric-sql/pglite";
+import { hiveMigrations } from "../hive/migrations.js";
+import { memoryMigrations } from "../memory/migrations.js";
 
 // ============================================================================
 // Types
@@ -394,6 +396,10 @@ export const migrations: Migration[] = [
       DROP TABLE IF EXISTS events;
     `,
   },
+  // Hive migrations (v7-v8)
+  ...hiveMigrations,
+  // Memory migrations (v9+)
+  ...memoryMigrations,
 ];
 
 // ============================================================================

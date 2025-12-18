@@ -24,6 +24,7 @@
  */
 
 import { PGlite } from "@electric-sql/pglite";
+import { vector } from "@electric-sql/pglite/vector";
 import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, rmSync } from "node:fs";
 import { basename, join } from "node:path";
@@ -192,7 +193,10 @@ function isWasmAbortError(error: unknown): boolean {
  */
 async function createPGliteWithRecovery(dbPath: string): Promise<PGlite> {
   try {
-    const pglite = new PGlite(dbPath);
+    const pglite = await PGlite.create({
+      dataDir: dbPath,
+      extensions: { vector },
+    });
     // PGLite initialization is lazy - force it to actually connect
     // by running a simple query. This surfaces WASM errors early.
     await pglite.query("SELECT 1");
@@ -214,7 +218,10 @@ async function createPGliteWithRecovery(dbPath: string): Promise<PGlite> {
 
       // Retry with fresh database
       try {
-        const pglite = new PGlite(dbPath);
+        const pglite = await PGlite.create({
+          dataDir: dbPath,
+          extensions: { vector },
+        });
         await pglite.query("SELECT 1");
         console.log(`[swarm-mail] Successfully recovered from corrupted database: ${dbPath}`);
         return pglite;
@@ -431,7 +438,9 @@ async function getSwarmMailSocketInternal(
 export async function createInMemorySwarmMail(
   projectKey = "test",
 ): Promise<SwarmMailAdapter> {
-  const pglite = new PGlite(); // in-memory
+  const pglite = await PGlite.create({
+    extensions: { vector },
+  }); // in-memory with vector extension
   const db = wrapPGlite(pglite);
   const adapter = createSwarmMailAdapter(db, projectKey);
   await adapter.runMigrations();
