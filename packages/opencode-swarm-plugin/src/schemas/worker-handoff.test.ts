@@ -81,9 +81,9 @@ describe("WorkerHandoffContractSchema", () => {
     }
   });
 
-  test("invalid task_id format fails", () => {
+  test("empty task_id fails", () => {
     const invalidContract = {
-      task_id: "invalid-format", // Missing hash component
+      task_id: "", // Empty string not allowed
       files_owned: ["src/auth.ts"],
       files_readonly: [],
       dependencies_completed: [],
@@ -92,6 +92,37 @@ describe("WorkerHandoffContractSchema", () => {
 
     const result = WorkerHandoffContractSchema.safeParse(invalidContract);
     expect(result.success).toBe(false);
+    if (!result.success) {
+      expect(result.error.issues[0].message).toContain("cannot be empty");
+    }
+  });
+
+  test("short project name with hash is valid", () => {
+    // Regression test: single-word project names like "swarm-lf2p4u-abc123" should work
+    const shortProjectContract = {
+      task_id: "swarm-lf2p4u-abc123", // Only 2 segments before timestamp
+      files_owned: ["src/auth.ts"],
+      files_readonly: [],
+      dependencies_completed: [],
+      success_criteria: ["Auth works"],
+    };
+
+    const result = WorkerHandoffContractSchema.safeParse(shortProjectContract);
+    expect(result.success).toBe(true);
+  });
+
+  test("partial hash is valid (resolvePartialId will expand it)", () => {
+    // Partial hashes should be accepted - resolvePartialId will expand them
+    const partialHashContract = {
+      task_id: "mjd4pjuj", // Short hash only
+      files_owned: ["src/auth.ts"],
+      files_readonly: [],
+      dependencies_completed: [],
+      success_criteria: ["Auth works"],
+    };
+
+    const result = WorkerHandoffContractSchema.safeParse(partialHashContract);
+    expect(result.success).toBe(true);
   });
 });
 

@@ -18,17 +18,17 @@ import { z } from "zod";
 export const WorkerHandoffContractSchema = z.object({
   /**
    * Cell ID for this subtask.
-   * Format: `{project}-{hash}` or `{project}-{hash}.{index}`
-   * Example: `opencode-swarm-monorepo-lf2p4u-abc123`
+   * Can be a full cell ID, hash, or partial hash.
+   * Examples: 
+   * - Full ID: `opencode-swarm-monorepo-lf2p4u-abc123`
+   * - Hash only: `lf2p4u`
+   * - Partial hash: `mjd4pjuj`
    *
-   * Requires at least 3 segments (project can be multi-word, must have hash).
+   * The hive tools use resolvePartialId() to expand short IDs before lookup.
    */
   task_id: z
     .string()
-    .regex(
-      /^[a-z0-9]+(-[a-z0-9]+){2,}(\.[\w-]+)?$/,
-      "Invalid task ID format (expected: project-slug-hash with minimum 3 segments)",
-    ),
+    .min(1, "Task ID cannot be empty"),
 
   /**
    * Files this worker owns (exclusive write access).

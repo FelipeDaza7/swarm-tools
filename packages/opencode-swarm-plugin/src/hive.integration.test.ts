@@ -662,6 +662,39 @@ describe("beads integration", () => {
       }
     });
 
+    it("short hashes work with all ID-taking tools", async () => {
+      // Use last 6-8 chars of hash (or full hash if short)
+      const shortHash = hash.substring(Math.max(0, hash.length - 8));
+      
+      try {
+        // Test hive_update
+        await hive_update.execute(
+          { id: shortHash, description: "Updated via short hash" },
+          mockContext,
+        );
+
+        // Test hive_start
+        await hive_start.execute({ id: shortHash }, mockContext);
+
+        // Test hive_close  
+        const result = await hive_close.execute(
+          { id: shortHash, reason: "Closed via short hash" },
+          mockContext,
+        );
+
+        expect(result).toContain("Closed");
+        expect(result).toContain(fullId);
+      } catch (error) {
+        // If ambiguous, verify error message is helpful
+        if (error instanceof Error && error.message.includes("Ambiguous")) {
+          expect(error.message).toMatch(/ambiguous.*multiple/i);
+          expect(error.message).toContain(shortHash);
+        } else {
+          throw error;
+        }
+      }
+    });
+
     describe("hive_update", () => {
       it("accepts full cell ID (no resolution needed)", async () => {
         const result = await hive_update.execute(
