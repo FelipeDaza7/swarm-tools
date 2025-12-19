@@ -19,6 +19,7 @@ import {
   createHiveAdapter,
   FlushManager,
   importFromJSONL,
+  syncMemories,
   type HiveAdapter,
   type Cell as AdapterCell,
   getSwarmMail,
@@ -1012,8 +1013,21 @@ export const hive_sync = tool({
       "flush hive",
     );
 
-    if (flushResult.cellsExported === 0) {
-      return "No cells to sync";
+    // 2b. Sync memories to JSONL
+    const swarmMail = await getSwarmMail(projectKey);
+    const db = await swarmMail.getDatabase();
+    const hivePath = join(projectKey, ".hive");
+    let memoriesSynced = 0;
+    try {
+      const memoryResult = await syncMemories(db, hivePath);
+      memoriesSynced = memoryResult.exported;
+    } catch (err) {
+      // Memory sync is optional - don't fail if it errors
+      console.warn("[hive_sync] Memory sync warning:", err);
+    }
+
+    if (flushResult.cellsExported === 0 && memoriesSynced === 0) {
+      return "No cells or memories to sync";
     }
 
     // 3. Check if there are changes to commit

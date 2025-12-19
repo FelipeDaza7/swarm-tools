@@ -84,7 +84,8 @@ describe("Memory Store - CRUD Operations", () => {
         content TEXT NOT NULL,
         metadata JSONB DEFAULT '{}',
         collection TEXT DEFAULT 'default',
-        created_at TIMESTAMPTZ DEFAULT NOW()
+        created_at TIMESTAMPTZ DEFAULT NOW(),
+        confidence REAL DEFAULT 0.7
       )
     `);
     await db.exec(`
@@ -285,7 +286,8 @@ describe("Memory Store - Vector Search", () => {
         content TEXT NOT NULL,
         metadata JSONB DEFAULT '{}',
         collection TEXT DEFAULT 'default',
-        created_at TIMESTAMPTZ DEFAULT NOW()
+        created_at TIMESTAMPTZ DEFAULT NOW(),
+        confidence REAL DEFAULT 0.7
       )
     `);
     await db.exec(`
@@ -415,7 +417,8 @@ describe("Memory Store - Full-Text Search", () => {
         content TEXT NOT NULL,
         metadata JSONB DEFAULT '{}',
         collection TEXT DEFAULT 'default',
-        created_at TIMESTAMPTZ DEFAULT NOW()
+        created_at TIMESTAMPTZ DEFAULT NOW(),
+        confidence REAL DEFAULT 0.7
       )
     `);
     await db.exec(`
@@ -532,7 +535,8 @@ describe("Memory Store - Edge Cases", () => {
         content TEXT NOT NULL,
         metadata JSONB DEFAULT '{}',
         collection TEXT DEFAULT 'default',
-        created_at TIMESTAMPTZ DEFAULT NOW()
+        created_at TIMESTAMPTZ DEFAULT NOW(),
+        confidence REAL DEFAULT 0.7
       )
     `);
     await db.exec(`

@@ -37,3 +37,16 @@ export {
 	type MigrationOptions,
 	type MigrationResult,
 } from "./migrate-legacy.js";
+
+// Git sync (JSONL export/import)
+export {
+	exportMemories,
+	importMemories,
+	syncMemories,
+	parseMemoryJSONL,
+	serializeMemoryToJSONL,
+	type ExportOptions as MemoryExportOptions,
+	type ImportOptions as MemoryImportOptions,
+	type MemoryExport,
+	type MemoryImportResult,
+} from "./sync.js";

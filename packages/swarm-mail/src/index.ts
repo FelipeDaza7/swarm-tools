@@ -125,3 +125,18 @@ export type {
   MigrationOptions,
   MigrationResult,
 } from "./memory/migrate-legacy";
+
+// Memory sync (JSONL export/import for git)
+export {
+  exportMemories,
+  importMemories,
+  syncMemories,
+  parseMemoryJSONL,
+  serializeMemoryToJSONL,
+} from "./memory/sync";
+export type {
+  MemoryExport,
+  MemoryImportResult,
+  ExportOptions as MemoryExportOptions,
+  ImportOptions as MemoryImportOptions,
+} from "./memory/sync";

@@ -104,7 +104,7 @@ export { createMemoryAdapter };
  */
 export const semantic_memory_store = tool({
 	description:
-		"Store a memory with semantic embedding. Memories are searchable by semantic similarity and can be organized into collections.",
+		"Store a memory with semantic embedding. Memories are searchable by semantic similarity and can be organized into collections. Confidence affects decay rate: high confidence (1.0) = 135 day half-life, low confidence (0.0) = 45 day half-life.",
 	args: {
 		information: tool.schema
 			.string()
@@ -121,6 +121,10 @@ export const semantic_memory_store = tool({
 			.string()
 			.optional()
 			.describe("JSON string with additional metadata"),
+		confidence: tool.schema
+			.number()
+			.optional()
+			.describe("Confidence level (0.0-1.0) affecting decay rate. Higher = slower decay. Default 0.7"),
 	},
 	async execute(args, ctx: ToolContext) {
 		const adapter = await getMemoryAdapter();

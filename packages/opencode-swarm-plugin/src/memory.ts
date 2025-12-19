@@ -68,6 +68,8 @@ export interface StoreArgs {
 	readonly collection?: string;
 	readonly tags?: string;
 	readonly metadata?: string;
+	/** Confidence level (0.0-1.0) affecting decay rate. Higher = slower decay. Default 0.7 */
+	readonly confidence?: number;
 }
 
 /** Arguments for find operation */
@@ -288,12 +290,19 @@ export async function createMemoryAdapter(
 				metadata.tags = tags;
 			}
 
+			// Clamp confidence to valid range [0.0, 1.0]
+			const clampConfidence = (c: number | undefined): number => {
+				if (c === undefined) return 0.7;
+				return Math.max(0.0, Math.min(1.0, c));
+			};
+
 			const memory: Memory = {
 				id,
 				content: args.information,
 				metadata,
 				collection,
 				createdAt: new Date(),
+				confidence: clampConfidence(args.confidence),
 			};
 
 			// Generate embedding

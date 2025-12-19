@@ -63,6 +63,8 @@ export interface StoreOptions {
   readonly tags?: string;
   /** JSON string with additional metadata */
   readonly metadata?: string;
+  /** Confidence level (0.0-1.0) affecting decay rate. Higher = slower decay. Default 0.7 */
+  readonly confidence?: number;
 }
 
 /**
@@ -127,12 +129,30 @@ export function createMemoryAdapter(db: DatabaseAdapter, config: MemoryConfig) {
   };
 
   /**
-   * Calculate decay factor based on memory age
-   * 90-day half-life: score *= 0.5^(age_days/90)
+   * Clamp confidence to valid range [0.0, 1.0]
    */
-  const calculateDecayFactor = (createdAt: Date): number => {
+  const clampConfidence = (confidence: number | undefined): number => {
+    if (confidence === undefined) return 0.7;
+    return Math.max(0.0, Math.min(1.0, confidence));
+  };
+
+  /**
+   * Calculate decay factor based on memory age and confidence
+   *
+   * Confidence-adjusted half-life formula:
+   * - halfLife = 90 * (0.5 + confidence)
+   * - High confidence (1.0) = 135 day half-life (slower decay)
+   * - Default confidence (0.7) = 108 day half-life
+   * - Low confidence (0.0) = 45 day half-life (faster decay)
+   *
+   * @param createdAt - Memory creation timestamp
+   * @param confidence - Confidence level (0.0-1.0)
+   * @returns Decay factor (0.0-1.0)
+   */
+  const calculateDecayFactor = (createdAt: Date, confidence: number): number => {
     const ageInDays = (Date.now() - createdAt.getTime()) / (1000 * 60 * 60 * 24);
-    return 0.5 ** (ageInDays / 90);
+    const halfLife = 90 * (0.5 + confidence);
+    return 0.5 ** (ageInDays / halfLife);
   };
 
   /**
@@ -140,7 +160,10 @@ export function createMemoryAdapter(db: DatabaseAdapter, config: MemoryConfig) {
    */
   const applyDecay = (results: SearchResult[]): SearchResult[] => {
     return results.map((result) => {
-      const decayFactor = calculateDecayFactor(result.memory.createdAt);
+      const decayFactor = calculateDecayFactor(
+        result.memory.createdAt,
+        result.memory.confidence ?? 0.7
+      );
       return {
         ...result,
         score: result.score * decayFactor,
@@ -176,7 +199,7 @@ export function createMemoryAdapter(db: DatabaseAdapter, config: MemoryConfig) {
       information: string,
       options: StoreOptions = {}
     ): Promise<{ id: string }> {
-      const { collection = "default", tags, metadata: metadataJson } = options;
+      const { collection = "default", tags, metadata: metadataJson, confidence } = options;
 
       // Parse metadata
       let metadata: Record<string, unknown> = {};
@@ -202,7 +225,7 @@ export function createMemoryAdapter(db: DatabaseAdapter, config: MemoryConfig) {
         );
       }
 
-      // Store memory
+      // Store memory with clamped confidence
       const id = generateId();
       const memory: Memory = {
         id,
@@ -210,6 +233,7 @@ export function createMemoryAdapter(db: DatabaseAdapter, config: MemoryConfig) {
         metadata,
         collection,
         createdAt: new Date(),
+        confidence: clampConfidence(confidence),
       };
 
       await store.store(memory, embedding);

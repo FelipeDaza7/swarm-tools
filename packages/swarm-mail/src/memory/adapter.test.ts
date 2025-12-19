@@ -99,7 +99,8 @@ describe("MemoryAdapter - Store and Retrieve", () => {
         content TEXT NOT NULL,
         metadata JSONB DEFAULT '{}',
         collection TEXT DEFAULT 'default',
-        created_at TIMESTAMPTZ DEFAULT NOW()
+        created_at TIMESTAMPTZ DEFAULT NOW(),
+        confidence REAL DEFAULT 0.7
       )
     `);
     await db.exec(`
@@ -206,7 +207,8 @@ describe("MemoryAdapter - Semantic Search", () => {
         content TEXT NOT NULL,
         metadata JSONB DEFAULT '{}',
         collection TEXT DEFAULT 'default',
-        created_at TIMESTAMPTZ DEFAULT NOW()
+        created_at TIMESTAMPTZ DEFAULT NOW(),
+        confidence REAL DEFAULT 0.7
       )
     `);
     await db.exec(`
@@ -324,7 +326,8 @@ describe("MemoryAdapter - FTS Fallback", () => {
         content TEXT NOT NULL,
         metadata JSONB DEFAULT '{}',
         collection TEXT DEFAULT 'default',
-        created_at TIMESTAMPTZ DEFAULT NOW()
+        created_at TIMESTAMPTZ DEFAULT NOW(),
+        confidence REAL DEFAULT 0.7
       )
     `);
     await db.exec(`
@@ -405,7 +408,8 @@ describe("MemoryAdapter - CRUD Operations", () => {
         content TEXT NOT NULL,
         metadata JSONB DEFAULT '{}',
         collection TEXT DEFAULT 'default',
-        created_at TIMESTAMPTZ DEFAULT NOW()
+        created_at TIMESTAMPTZ DEFAULT NOW(),
+        confidence REAL DEFAULT 0.7
       )
     `);
     await db.exec(`
@@ -502,7 +506,8 @@ describe("MemoryAdapter - Health Check", () => {
         content TEXT NOT NULL,
         metadata JSONB DEFAULT '{}',
         collection TEXT DEFAULT 'default',
-        created_at TIMESTAMPTZ DEFAULT NOW()
+        created_at TIMESTAMPTZ DEFAULT NOW(),
+        confidence REAL DEFAULT 0.7
       )
     `);
 
@@ -572,7 +577,8 @@ describe("MemoryAdapter - Decay Calculation", () => {
         content TEXT NOT NULL,
         metadata JSONB DEFAULT '{}',
         collection TEXT DEFAULT 'default',
-        created_at TIMESTAMPTZ DEFAULT NOW()
+        created_at TIMESTAMPTZ DEFAULT NOW(),
+        confidence REAL DEFAULT 0.7
       )
     `);
     await db.exec(`
@@ -629,5 +635,189 @@ describe("MemoryAdapter - Decay Calculation", () => {
       throw new Error("Old memory not found in results");
     }
     expect(oldResult.score).toBeLessThan(1.0);
+  });
+});
+
+describe("MemoryAdapter - Confidence-Based Decay", () => {
+  let pglite: PGlite;
+  let db: DatabaseAdapter;
+  let adapter: ReturnType<typeof createMemoryAdapter>;
+  let dbPath: string;
+  let originalFetch: typeof fetch;
+
+  beforeEach(async () => {
+    originalFetch = global.fetch;
+    dbPath = makeTempDbPath();
+    pglite = await PGlite.create({
+      dataDir: dbPath,
+      extensions: { vector },
+    });
+    db = wrapPGlite(pglite);
+
+    // Initialize schema with confidence column
+    await db.exec("CREATE EXTENSION IF NOT EXISTS vector;");
+    await db.exec(`
+      CREATE TABLE IF NOT EXISTS memories (
+        id TEXT PRIMARY KEY,
+        content TEXT NOT NULL,
+        metadata JSONB DEFAULT '{}',
+        collection TEXT DEFAULT 'default',
+        created_at TIMESTAMPTZ DEFAULT NOW(),
+        confidence REAL DEFAULT 0.7
+      )
+    `);
+    await db.exec(`
+      CREATE TABLE IF NOT EXISTS memory_embeddings (
+        memory_id TEXT PRIMARY KEY REFERENCES memories(id) ON DELETE CASCADE,
+        embedding vector(1024) NOT NULL
+      )
+    `);
+    await db.exec(`
+      CREATE INDEX IF NOT EXISTS memory_embeddings_hnsw_idx 
+      ON memory_embeddings 
+      USING hnsw (embedding vector_cosine_ops)
+    `);
+
+    const mockFetch = mock(() => mockSuccessResponse(mockEmbedding(1)));
+    global.fetch = mockFetch as typeof fetch;
+
+    adapter = createMemoryAdapter(db, mockConfig);
+  });
+
+  afterEach(async () => {
+    global.fetch = originalFetch;
+    await pglite.close();
+    rmSync(dbPath, { recursive: true, force: true });
+  });
+
+  test("store() accepts confidence parameter", async () => {
+    const result = await adapter.store("High confidence memory", {
+      confidence: 0.9,
+    });
+
+    expect(result.id).toBeDefined();
+
+    // Verify confidence was stored
+    const row = await db.query<{ confidence: number }>(
+      "SELECT confidence FROM memories WHERE id = $1",
+      [result.id]
+    );
+    expect(row.rows[0].confidence).toBe(0.9);
+  });
+
+  test("store() defaults confidence to 0.7", async () => {
+    const result = await adapter.store("Default confidence memory");
+
+    const row = await db.query<{ confidence: number }>(
+      "SELECT confidence FROM memories WHERE id = $1",
+      [result.id]
+    );
+    expect(row.rows[0].confidence).toBe(0.7);
+  });
+
+  test("store() clamps confidence to 0.0-1.0 range", async () => {
+    // Test upper bound
+    const high = await adapter.store("Too high", { confidence: 1.5 });
+    const highRow = await db.query<{ confidence: number }>(
+      "SELECT confidence FROM memories WHERE id = $1",
+      [high.id]
+    );
+    expect(highRow.rows[0].confidence).toBe(1.0);
+
+    // Test lower bound
+    const low = await adapter.store("Too low", { confidence: -0.5 });
+    const lowRow = await db.query<{ confidence: number }>(
+      "SELECT confidence FROM memories WHERE id = $1",
+      [low.id]
+    );
+    expect(lowRow.rows[0].confidence).toBe(0.0);
+  });
+
+  test("high confidence memory decays slower than low confidence", async () => {
+    // Create two memories 90 days old with different confidence levels
+    const oldDate = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000); // 90 days ago
+    const vectorStr = `[${mockEmbedding(1).join(",")}]`;
+
+    // High confidence (1.0) = 180 day half-life
+    await db.query(
+      "INSERT INTO memories (id, content, metadata, collection, created_at, confidence) VALUES ($1, $2, $3, $4, $5, $6)",
+      ["high-conf", "High confidence content", "{}", "default", oldDate.toISOString(), 1.0]
+    );
+    await db.query(
+      "INSERT INTO memory_embeddings (memory_id, embedding) VALUES ($1, $2::vector)",
+      ["high-conf", vectorStr]
+    );
+
+    // Low confidence (0.3) = 72 day half-life (0.5 + 0.3 = 0.8, 90 * 0.8 = 72)
+    await db.query(
+      "INSERT INTO memories (id, content, metadata, collection, created_at, confidence) VALUES ($1, $2, $3, $4, $5, $6)",
+      ["low-conf", "Low confidence content", "{}", "default", oldDate.toISOString(), 0.3]
+    );
+    await db.query(
+      "INSERT INTO memory_embeddings (memory_id, embedding) VALUES ($1, $2::vector)",
+      ["low-conf", vectorStr]
+    );
+
+    const results = await adapter.find("confidence content");
+
+    const highResult = results.find((r) => r.memory.id === "high-conf");
+    const lowResult = results.find((r) => r.memory.id === "low-conf");
+
+    expect(highResult).toBeDefined();
+    expect(lowResult).toBeDefined();
+
+    if (!highResult || !lowResult) {
+      throw new Error("Results not found");
+    }
+
+    // High confidence should have higher score (slower decay)
+    // At 90 days: high conf (180d half-life) = 0.5^(90/180) ≈ 0.71
+    // At 90 days: low conf (72d half-life) = 0.5^(90/72) ≈ 0.42
+    expect(highResult.score).toBeGreaterThan(lowResult.score);
+  });
+
+  test("get() returns confidence field", async () => {
+    const result = await adapter.store("Memory with confidence", {
+      confidence: 0.85,
+    });
+
+    const memory = await adapter.get(result.id);
+
+    expect(memory).not.toBeNull();
+    expect(memory?.confidence).toBe(0.85);
+  });
+
+  test("confidence affects half-life calculation correctly", async () => {
+    // Formula: halfLife = 90 * (0.5 + confidence)
+    // confidence 1.0 -> halfLife = 90 * 1.5 = 135 days
+    // confidence 0.5 -> halfLife = 90 * 1.0 = 90 days
+    // confidence 0.0 -> halfLife = 90 * 0.5 = 45 days
+
+    const vectorStr = `[${mockEmbedding(1).join(",")}]`;
+
+    // Create memories at exactly 90 days old with different confidence
+    const oldDate = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000);
+
+    // confidence 0.5 -> 90 day half-life -> at 90 days = 50% decay
+    await db.query(
+      "INSERT INTO memories (id, content, metadata, collection, created_at, confidence) VALUES ($1, $2, $3, $4, $5, $6)",
+      ["mid-conf", "Mid confidence", "{}", "default", oldDate.toISOString(), 0.5]
+    );
+    await db.query(
+      "INSERT INTO memory_embeddings (memory_id, embedding) VALUES ($1, $2::vector)",
+      ["mid-conf", vectorStr]
+    );
+
+    const results = await adapter.find("Mid confidence");
+    const midResult = results.find((r) => r.memory.id === "mid-conf");
+
+    expect(midResult).toBeDefined();
+    if (!midResult) throw new Error("Result not found");
+
+    // At 90 days with 90-day half-life, decay should be exactly 0.5
+    // Score = rawScore * 0.5
+    // We can verify the decay factor is approximately 0.5
+    // (exact value depends on raw similarity score)
+    expect(midResult.score).toBeLessThan(0.6); // Should be around 0.5 * rawScore
   });
 });

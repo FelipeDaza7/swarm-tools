@@ -53,7 +53,8 @@ export const memoryMigration: Migration = {
       content TEXT NOT NULL,
       metadata JSONB DEFAULT '{}',
       collection TEXT DEFAULT 'default',
-      created_at TIMESTAMPTZ DEFAULT NOW()
+      created_at TIMESTAMPTZ DEFAULT NOW(),
+      confidence REAL DEFAULT 0.7
     );
 
     -- Collection filtering index

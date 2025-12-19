@@ -291,18 +291,36 @@ swarmmail_init(project_path="{project_path}", task_description="{bead_id}: {subt
 
 **If you skip this step, your work will not be tracked and swarm_complete will fail.**
 
-### Step 2: Query Past Learnings (BEFORE starting work)
+### Step 2: 🧠 Query Past Learnings (MANDATORY - BEFORE starting work)
+
+**⚠️ CRITICAL: ALWAYS query semantic memory BEFORE writing ANY code.**
+
 \`\`\`
-semantic-memory_find(query="<keywords from your task>", limit=5)
+semantic-memory_find(query="<keywords from your task>", limit=5, expand=true)
 \`\`\`
 
-**Check if past agents solved similar problems.** Search for:
-- Error messages if debugging
-- Domain concepts (e.g., "authentication", "caching")
-- Technology stack (e.g., "Next.js", "React")
-- Patterns (e.g., "event sourcing", "validation")
+**Why this is MANDATORY:**
+- Past agents may have already solved your exact problem
+- Avoids repeating mistakes that wasted 30+ minutes before
+- Discovers project-specific patterns and gotchas
+- Finds known workarounds for tool/library quirks
 
-**Past learnings save time and prevent repeating mistakes.**
+**Search Query Examples by Task Type:**
+
+- **Bug fix**: Use exact error message or "<symptom> <component>"
+- **New feature**: Search "<domain concept> implementation pattern"
+- **Refactor**: Query "<pattern name> migration approach"
+- **Integration**: Look for "<library name> gotchas configuration"
+- **Testing**: Find "testing <component type> characterization tests"
+- **Performance**: Search "<technology> performance optimization"
+
+**BEFORE you start coding:**
+1. Run semantic-memory_find with keywords from your task
+2. Read the results with expand=true for full content
+3. Check if any memory solves your problem or warns of pitfalls
+4. Adjust your approach based on past learnings
+
+**If you skip this step, you WILL waste time solving already-solved problems.**
 
 ### Step 3: Load Relevant Skills (if available)
 \`\`\`
@@ -388,21 +406,44 @@ swarm_checkpoint(
 
 **Checkpoints preserve context so you can recover if things go wrong.**
 
-### Step 8: Store Learnings (if you discovered something)
+### Step 8: 💾 STORE YOUR LEARNINGS (if you discovered something)
+
+**If you learned it the hard way, STORE IT so the next agent doesn't have to.**
+
 \`\`\`
 semantic-memory_store(
   information="<what you learned, WHY it matters, how to apply it>",
-  metadata="<tags: domain, tech-stack, pattern-type>"
+  tags="<domain, tech-stack, pattern-type>"
 )
 \`\`\`
 
-**Store:**
-- Tricky bugs you solved (root cause + solution)
-- Project-specific patterns or domain rules
-- Tool/library gotchas and workarounds
-- Failed approaches (anti-patterns to avoid)
+**MANDATORY Storage Triggers - Store when you:**
+- 🐛 **Solved a tricky bug** (>15min debugging) - include root cause + solution
+- 💡 **Discovered a project-specific pattern** - domain rules, business logic quirks
+- ⚠️ **Found a tool/library gotcha** - API quirks, version-specific bugs, workarounds
+- 🚫 **Tried an approach that failed** - anti-patterns to avoid, why it didn't work
+- 🏗️ **Made an architectural decision** - reasoning, alternatives considered, tradeoffs
 
-**Don't store generic knowledge.** Store the WHY, not just the WHAT.
+**What Makes a GOOD Memory:**
+
+✅ **GOOD** (actionable, explains WHY):
+\`\`\`
+"OAuth refresh tokens need 5min buffer before expiry to avoid race conditions.
+Without buffer, token refresh can fail mid-request if expiry happens between
+check and use. Implemented with: if (expiresAt - Date.now() < 300000) refresh()"
+\`\`\`
+
+❌ **BAD** (generic, no context):
+\`\`\`
+"Fixed the auth bug by adding a null check"
+\`\`\`
+
+**What NOT to Store:**
+- Generic knowledge that's in official documentation
+- Implementation details that change frequently
+- Vague descriptions without context ("fixed the thing")
+
+**The WHY matters more than the WHAT.** Future agents need context to apply your learning.
 
 ### Step 9: Complete (REQUIRED - releases reservations)
 \`\`\`
@@ -493,17 +534,20 @@ Other cell operations:
 
 **NON-NEGOTIABLE:**
 1. Step 1 (swarmmail_init) MUST be first - do it before anything else
-2. Step 2 (semantic-memory_find) MUST happen before starting work
+2. 🧠 Step 2 (semantic-memory_find) MUST happen BEFORE starting work - query first, code second
 3. Step 4 (swarmmail_reserve) - YOU reserve files, not coordinator
 4. Step 6 (swarm_progress) - Report at milestones, don't work silently
-5. Step 9 (swarm_complete) - Use this to close, NOT hive_close
+5. 💾 Step 8 (semantic-memory_store) - If you learned something hard, STORE IT
+6. Step 9 (swarm_complete) - Use this to close, NOT hive_close
 
 **If you skip these steps:**
 - Your work won't be tracked (swarm_complete will fail)
-- You'll waste time repeating solved problems (no semantic memory query)
+- 🔄 You'll waste time repeating already-solved problems (no semantic memory query)
 - Edit conflicts with other agents (no file reservation)
 - Lost work if you crash (no checkpoints)
-- Future agents repeat your mistakes (no learnings stored)
+- 🔄 Future agents repeat YOUR mistakes (no learnings stored)
+
+**Memory is the swarm's collective intelligence. Query it. Feed it.**
 
 Begin now.`;
 

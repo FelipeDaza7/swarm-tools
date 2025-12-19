@@ -41,6 +41,8 @@ export interface Memory {
   readonly metadata: Record<string, unknown>;
   readonly collection: string;
   readonly createdAt: Date;
+  /** Confidence level (0.0-1.0) affecting decay rate. Higher = slower decay. Default 0.7 */
+  readonly confidence?: number;
 }
 
 /** Search result with similarity score */
@@ -91,6 +93,7 @@ export function createMemoryStore(db: DatabaseAdapter) {
     metadata: row.metadata ?? {},
     collection: row.collection ?? "default",
     createdAt: new Date(row.created_at),
+    confidence: row.confidence ?? 0.7,
   });
 
   return {
@@ -109,18 +112,20 @@ export function createMemoryStore(db: DatabaseAdapter) {
       try {
         // Insert or update memory
         await db.query(
-          `INSERT INTO memories (id, content, metadata, collection, created_at)
-           VALUES ($1, $2, $3, $4, $5)
+          `INSERT INTO memories (id, content, metadata, collection, created_at, confidence)
+           VALUES ($1, $2, $3, $4, $5, $6)
            ON CONFLICT (id) DO UPDATE SET
              content = EXCLUDED.content,
              metadata = EXCLUDED.metadata,
-             collection = EXCLUDED.collection`,
+             collection = EXCLUDED.collection,
+             confidence = EXCLUDED.confidence`,
           [
             memory.id,
             memory.content,
             JSON.stringify(memory.metadata),
             memory.collection,
             memory.createdAt.toISOString(),
+            memory.confidence ?? 0.7,
           ]
         );
 
@@ -167,6 +172,7 @@ export function createMemoryStore(db: DatabaseAdapter) {
           m.metadata,
           m.collection,
           m.created_at,
+          m.confidence,
           1 - (e.embedding <=> $1::vector) as score
         FROM memory_embeddings e
         JOIN memories m ON m.id = e.memory_id
@@ -227,6 +233,7 @@ export function createMemoryStore(db: DatabaseAdapter) {
           m.metadata,
           m.collection,
           m.created_at,
+          m.confidence,
           ts_rank(to_tsvector('english', m.content), plainto_tsquery('english', $1)) as score
         FROM memories m
         WHERE to_tsvector('english', m.content) @@ plainto_tsquery('english', $1)
