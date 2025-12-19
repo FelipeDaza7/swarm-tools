@@ -94,6 +94,72 @@ export interface DatabaseAdapter {
 	 * If not provided, swarm-mail assumes connection is managed externally.
 	 */
 	close?(): Promise<void>;
+
+	/**
+	 * Force a checkpoint to flush WAL to data files (optional)
+	 *
+	 * PostgreSQL CHECKPOINT command forces write-ahead log (WAL) to be written
+	 * to data files, allowing WAL to be recycled. Critical for preventing WAL
+	 * bloat in embedded databases like PGLite.
+	 *
+	 * Root cause from pdf-brain: PGLite accumulated 930 WAL files (930MB) without
+	 * explicit CHECKPOINT, causing WASM OOM crash.
+	 *
+	 * Call after batch operations:
+	 * - Migration batches
+	 * - Bulk event appends
+	 * - Large projection updates
+	 *
+	 * @example
+	 * ```typescript
+	 * await db.exec("CREATE TABLE ...");
+	 * await db.checkpoint?.(); // Force WAL flush
+	 * ```
+	 */
+	checkpoint?(): Promise<void>;
+
+	/**
+	 * Get WAL statistics (optional)
+	 *
+	 * Returns current size and file count of write-ahead log (WAL) files.
+	 * Use for monitoring WAL bloat to prevent WASM OOM crashes in PGLite.
+	 *
+	 * For PGLite: checks pg_wal directory in dataDir
+	 * For PostgreSQL: queries pg_stat_wal (if available)
+	 *
+	 * @returns WAL stats with size in bytes and file count
+	 *
+	 * @example
+	 * ```typescript
+	 * const stats = await db.getWalStats?.();
+	 * console.log(`WAL: ${stats.walSize / 1024 / 1024}MB, ${stats.walFileCount} files`);
+	 * ```
+	 */
+	getWalStats?(): Promise<{ walSize: number; walFileCount: number }>;
+
+	/**
+	 * Check WAL health against threshold (optional)
+	 *
+	 * Monitors WAL size and warns when it exceeds a configurable threshold.
+	 * Default threshold: 100MB (warns before critical 930MB from pdf-brain crash).
+	 *
+	 * Returns health status with message describing current WAL state.
+	 *
+	 * @param thresholdMb - Warning threshold in megabytes (default: 100)
+	 * @returns Health result with boolean status and descriptive message
+	 *
+	 * @example
+	 * ```typescript
+	 * const health = await db.checkWalHealth?.(100);
+	 * if (!health.healthy) {
+	 *   console.warn(health.message);
+	 *   await db.checkpoint?.(); // Trigger checkpoint
+	 * }
+	 * ```
+	 */
+	checkWalHealth?(
+		thresholdMb?: number,
+	): Promise<{ healthy: boolean; message: string }>;
 }
 
 /**

@@ -315,17 +315,49 @@ export interface SchemaAdapter {
 
 	/**
 	 * Check if database is healthy
+	 *
+	 * Returns enhanced health object with connectivity status and optional WAL health.
+	 * Supports custom WAL threshold via options.
+	 *
+	 * @param options - Optional health check options
+	 * @param options.walThresholdMb - Custom WAL size warning threshold in MB (default: 100)
+	 * @param projectPath - Optional project path
+	 * @returns Health status object with connectivity and WAL health
+	 *
+	 * @example
+	 * ```typescript
+	 * const health = await adapter.healthCheck({ walThresholdMb: 50 });
+	 * if (!health.connected) {
+	 *   console.error("Database not connected");
+	 * }
+	 * if (health.walHealth && !health.walHealth.healthy) {
+	 *   console.warn(health.walHealth.message);
+	 *   await adapter.checkpoint?.();
+	 * }
+	 * ```
 	 */
-	healthCheck(projectPath?: string): Promise<boolean>;
+	healthCheck(
+		options?: { walThresholdMb?: number },
+		projectPath?: string,
+	): Promise<{
+		connected: boolean;
+		walHealth?: { healthy: boolean; message: string };
+	}>;
 
 	/**
 	 * Get database statistics
+	 *
+	 * Returns counts of events, agents, messages, reservations, and optional WAL stats.
+	 *
+	 * @param projectPath - Optional project path
+	 * @returns Statistics object including WAL size and file count (if available)
 	 */
 	getDatabaseStats(projectPath?: string): Promise<{
 		events: number;
 		agents: number;
 		messages: number;
 		reservations: number;
+		wal?: { size: number; fileCount: number };
 	}>;
 
 	/**

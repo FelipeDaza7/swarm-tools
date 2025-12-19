@@ -568,6 +568,12 @@ export function createHiveAdapter(
           }
         }
       }
+      
+      // Force checkpoint after migrations to prevent WAL bloat
+      // Critical for embedded PGLite - prevents 930 WAL file accumulation
+      if (db.checkpoint) {
+        await db.checkpoint();
+      }
     },
 
     async getCellsStats(projectPath?) {

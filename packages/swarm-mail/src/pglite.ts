@@ -26,13 +26,64 @@
 import { PGlite } from "@electric-sql/pglite";
 import { vector } from "@electric-sql/pglite/vector";
 import { createHash } from "node:crypto";
-import { existsSync, mkdirSync, rmSync } from "node:fs";
-import { basename, join } from "node:path";
+import { existsSync, mkdirSync, readdirSync, rmSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
+import { basename, join } from "node:path";
 import { createSwarmMailAdapter } from "./adapter";
-import type { DatabaseAdapter, SwarmMailAdapter } from "./types";
+import { healthCheck, isDaemonRunning, startDaemon } from "./daemon";
 import { createSocketAdapter } from "./socket-adapter";
-import { isDaemonRunning, startDaemon, healthCheck } from "./daemon";
+import type { DatabaseAdapter, SwarmMailAdapter } from "./types";
+
+/**
+ * Get WAL directory size and file count
+ *
+ * Recursively scans pg_wal directory to count files and total size.
+ * Returns 0 for both if dataDir is not set (in-memory) or pg_wal doesn't exist.
+ *
+ * @param dataDir - PGLite data directory path
+ * @returns Total size in bytes and file count
+ */
+function getWalDirectoryStats(dataDir?: string): {
+	walSize: number;
+	walFileCount: number;
+} {
+	if (!dataDir || dataDir === "memory://") {
+		// In-memory database has no WAL files
+		return { walSize: 0, walFileCount: 0 };
+	}
+
+	const walDir = join(dataDir, "pg_wal");
+
+	if (!existsSync(walDir)) {
+		return { walSize: 0, walFileCount: 0 };
+	}
+
+	let totalSize = 0;
+	let fileCount = 0;
+
+	try {
+		const files = readdirSync(walDir);
+
+		for (const file of files) {
+			const filePath = join(walDir, file);
+			try {
+				const stats = statSync(filePath);
+				if (stats.isFile()) {
+					totalSize += stats.size;
+					fileCount++;
+				}
+			} catch {
+				// Skip files we can't stat (permissions, etc.)
+				continue;
+			}
+		}
+	} catch {
+		// Directory read failed - return zeros
+		return { walSize: 0, walFileCount: 0 };
+	}
+
+	return { walSize: totalSize, walFileCount: fileCount };
+}
 
 /**
  * Wrap PGLite to match DatabaseAdapter interface
@@ -42,13 +93,39 @@ import { isDaemonRunning, startDaemon, healthCheck } from "./daemon";
  * PGLite's exec() returns Results[] but DatabaseAdapter expects void.
  */
 export function wrapPGlite(pglite: PGlite): DatabaseAdapter {
-  return {
-    query: <T>(sql: string, params?: unknown[]) => pglite.query<T>(sql, params),
-    exec: async (sql: string) => {
-      await pglite.exec(sql);
-    },
-    close: () => pglite.close(),
-  };
+	return {
+		query: <T>(sql: string, params?: unknown[]) =>
+			pglite.query<T>(sql, params),
+		exec: async (sql: string) => {
+			await pglite.exec(sql);
+		},
+		close: () => pglite.close(),
+		checkpoint: async () => {
+			await pglite.query("CHECKPOINT");
+		},
+		getWalStats: async () => {
+			// PGLite stores dataDir as a property on the instance
+			// Access via type assertion since it's not in TypeScript types
+			const dataDir = (pglite as { dataDir?: string }).dataDir;
+			return getWalDirectoryStats(dataDir);
+		},
+		checkWalHealth: async (thresholdMb = 100) => {
+			const dataDir = (pglite as { dataDir?: string }).dataDir;
+			const { walSize, walFileCount } = getWalDirectoryStats(dataDir);
+
+			const walSizeMb = walSize / 1024 / 1024;
+			const healthy = walSizeMb < thresholdMb;
+
+			let message: string;
+			if (healthy) {
+				message = `WAL healthy: ${walSizeMb.toFixed(2)}MB (${walFileCount} files), threshold: ${thresholdMb}MB`;
+			} else {
+				message = `WAL size ${walSizeMb.toFixed(2)}MB (${walFileCount} files) exceeds threshold ${thresholdMb}MB. Consider running checkpoint().`;
+			}
+
+			return { healthy, message };
+		},
+	};
 }
 
 /**

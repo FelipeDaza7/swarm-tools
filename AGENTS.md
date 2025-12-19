@@ -86,6 +86,8 @@ beforeEach(async () => {
 });
 ```
 
+**WAL Safety Note:** In production, use daemon mode (single long-lived process). Multiple short-lived instances compound WAL accumulation. See `packages/swarm-mail/README.md` deployment section for details.
+
 ### Anti-Patterns to Avoid
 
 - Creating new database instances per test

@@ -240,16 +240,36 @@ export function createSwarmMailAdapter(
       const { runMigrations: runMigrationsImpl } =
         await import("./streams/migrations");
       await runMigrationsImpl(db as any);
+      
+      // Force checkpoint after migrations to prevent WAL bloat
+      // Critical for embedded PGLite - prevents 930 WAL file accumulation
+      if (db.checkpoint) {
+        await db.checkpoint();
+      }
     },
 
-    async healthCheck(projectPath?) {
-      // Simple query to check if db is working
+    async healthCheck(options, projectPath?) {
+      // Check basic connectivity
+      let connected = false;
       try {
         const result = await db.query("SELECT 1 as ok");
-        return result.rows.length > 0;
+        connected = result.rows.length > 0;
       } catch {
-        return false;
+        connected = false;
       }
+
+      // Check WAL health if supported
+      let walHealth: { healthy: boolean; message: string } | undefined;
+      if (db.checkWalHealth) {
+        try {
+          walHealth = await db.checkWalHealth(options?.walThresholdMb);
+        } catch {
+          // Silently ignore WAL health check failures
+          // Not all databases support this
+        }
+      }
+
+      return { connected, walHealth };
     },
 
     async getDatabaseStats(projectPath?) {
@@ -262,11 +282,23 @@ export function createSwarmMailAdapter(
         ),
       ]);
 
+      // Get WAL stats if supported
+      let wal: { size: number; fileCount: number } | undefined;
+      if (db.getWalStats) {
+        try {
+          const { walSize, walFileCount } = await db.getWalStats();
+          wal = { size: walSize, fileCount: walFileCount };
+        } catch {
+          // Silently ignore WAL stats failures
+        }
+      }
+
       return {
         events: parseInt(events.rows[0]?.count || "0"),
         agents: parseInt(agents.rows[0]?.count || "0"),
         messages: parseInt(messages.rows[0]?.count || "0"),
         reservations: parseInt(reservations.rows[0]?.count || "0"),
+        wal,
       };
     },
 

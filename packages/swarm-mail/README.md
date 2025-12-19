@@ -139,6 +139,76 @@ const swarmMail = await getSwarmMail('/my/project') // persistent
 const swarmMail = await createInMemorySwarmMail() // in-memory
 ```
 
+## Deployment
+
+### Daemon Mode (Recommended)
+
+For production use, run a **single long-lived process** that owns the PGLite database:
+
+```typescript
+import { getSwarmMail } from 'swarm-mail'
+
+// Start daemon
+const swarmMail = await getSwarmMail('/my/project')
+
+// Keep alive - handles cleanup on shutdown
+process.on('SIGTERM', async () => {
+  await swarmMail.close() // Flushes WAL, closes cleanly
+  process.exit(0)
+})
+```
+
+**Why daemon mode?**
+
+- **WAL safety** - Single process prevents WAL accumulation from multiple instances
+- **Proper cleanup** - Graceful shutdown triggers checkpoint, preventing unclean state
+- **Resource efficiency** - One PGLite instance shared across operations
+
+### WAL Safety Features
+
+PGLite uses PostgreSQL's Write-Ahead Log (WAL) for durability. Swarm Mail includes safeguards against WAL bloat:
+
+**Automatic checkpointing:**
+```typescript
+// After batch operations, force WAL flush
+await db.checkpoint()
+```
+
+**Health monitoring:**
+```typescript
+// Check WAL size (default threshold: 100MB)
+const health = await swarmMail.healthCheck({ walThresholdMb: 100 })
+
+if (!health.walHealth?.healthy) {
+  console.warn(health.walHealth?.message)
+  // "WAL size 120MB exceeds 100MB threshold (15 files)"
+}
+
+// Get detailed stats
+const stats = await swarmMail.getDatabaseStats()
+// { connected: true, wal: { size: 120_000_000, fileCount: 15 } }
+```
+
+**When to checkpoint manually:**
+
+- After migrations: `await swarmMail.runMigrations(); await db.checkpoint()`
+- After bulk event appends (100+ events)
+- Before long-running operations
+
+### Ephemeral Instances (Testing)
+
+For tests, create isolated in-memory instances:
+
+```typescript
+import { createInMemorySwarmMail } from 'swarm-mail'
+
+const swarmMail = await createInMemorySwarmMail('test-id')
+// ... run tests ...
+await swarmMail.close()
+```
+
+**Don't use ephemeral instances in production** - multiple short-lived processes compound WAL accumulation since each instance creates new PGLite connections without coordinated cleanup.
+
 ## Event Types
 
 ```typescript
