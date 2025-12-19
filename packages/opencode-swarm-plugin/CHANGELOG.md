@@ -1,5 +1,11 @@
 # opencode-swarm-plugin
 
+## 0.30.6
+
+### Patch Changes
+
+- [`32a2885`](https://github.com/joelhooks/swarm-tools/commit/32a2885115cc3e574e86d8e492f60ee189627488) Thanks [@joelhooks](https://github.com/joelhooks)! - chore: verify CI publish flow works
+
 ## 0.30.5
 
 ### Patch Changes
