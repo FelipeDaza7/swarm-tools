@@ -1741,6 +1741,9 @@ async function setup() {
               p.log.message(dim(`  ... and ${result.errors.length - 3} more errors`));
             }
           }
+          
+          // Close the connection to allow process to exit
+          await swarmMail.close();
         } catch (error) {
           migrateSpinner.stop("Migration failed");
           p.log.error(error instanceof Error ? error.message : String(error));
