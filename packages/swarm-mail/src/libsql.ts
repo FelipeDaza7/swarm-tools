@@ -47,20 +47,82 @@ export interface LibSQLConfig {
 }
 
 /**
+ * Convert PostgreSQL-style placeholders ($1, $2, ...) to SQLite-style (?)
+ * and expand parameters for reused placeholders.
+ *
+ * PostgreSQL allows reusing placeholders (e.g., $1, $2, $1) but SQLite's ?
+ * placeholders are strictly positional. This function:
+ * 1. Converts $N to ? in order of appearance
+ * 2. Expands the params array to match (duplicating values for reused placeholders)
+ *
+ * @param sql - SQL string with PostgreSQL placeholders
+ * @param params - Original parameters array
+ * @returns Object with converted SQL and expanded parameters
+ *
+ * @example
+ * ```typescript
+ * // PostgreSQL: VALUES ($1, $2, $1) with params [a, b]
+ * // SQLite:     VALUES (?, ?, ?) with params [a, b, a]
+ * const result = convertPlaceholders("VALUES ($1, $2, $1)", ["a", "b"]);
+ * // result.sql = "VALUES (?, ?, ?)"
+ * // result.params = ["a", "b", "a"]
+ * ```
+ */
+function convertPlaceholders(
+	sql: string,
+	params?: unknown[],
+): { sql: string; params: unknown[] | undefined } {
+	if (!params || params.length === 0) {
+		// No params, just replace placeholders with ?
+		return { sql: sql.replace(/\$\d+/g, "?"), params };
+	}
+
+	// Find all placeholders and their indices
+	const placeholderRegex = /\$(\d+)/g;
+	const expandedParams: unknown[] = [];
+
+	// Collect placeholder indices in order of appearance
+	for (const match of sql.matchAll(placeholderRegex)) {
+		const paramIndex = Number.parseInt(match[1], 10) - 1; // $1 -> index 0
+		if (paramIndex >= 0 && paramIndex < params.length) {
+			expandedParams.push(params[paramIndex]);
+		}
+	}
+
+	// Replace all $N with ?
+	const convertedSql = sql.replace(/\$\d+/g, "?");
+
+	return { sql: convertedSql, params: expandedParams };
+}
+
+/**
  * LibSQLAdapter implementation
  *
  * Wraps libSQL client to match DatabaseAdapter interface.
+ * Automatically converts PostgreSQL-style placeholders ($1, $2) to SQLite-style (?).
  */
 class LibSQLAdapter implements DatabaseAdapter {
 	constructor(private client: Client) {}
+
+	/**
+	 * Get the underlying libSQL client for Drizzle ORM
+	 *
+	 * Used by modules that need direct Drizzle access (e.g., hive projections).
+	 */
+	getClient(): Client {
+		return this.client;
+	}
 
 	async query<T = unknown>(
 		sql: string,
 		params?: unknown[],
 	): Promise<QueryResult<T>> {
+		// Convert PostgreSQL placeholders to SQLite placeholders and expand params
+		const converted = convertPlaceholders(sql, params);
+
 		const result = await this.client.execute({
-			sql,
-			args: params as InArgs | undefined,
+			sql: converted.sql,
+			args: converted.params as InArgs | undefined,
 		});
 
 		// libSQL returns { rows: Row[] } where Row is Record<string, any>
@@ -71,7 +133,9 @@ class LibSQLAdapter implements DatabaseAdapter {
 	}
 
 	async exec(sql: string): Promise<void> {
-		await this.client.execute(sql);
+		// Convert PostgreSQL placeholders to SQLite placeholders
+		const converted = convertPlaceholders(sql);
+		await this.client.execute(converted.sql);
 	}
 
 	async transaction<T>(fn: (tx: DatabaseAdapter) => Promise<T>): Promise<T> {
@@ -91,14 +155,18 @@ class LibSQLAdapter implements DatabaseAdapter {
 			): Promise<QueryResult<U>> => {
 				// For queries in transactions, we need to execute immediately
 				// because we might need the results for subsequent operations
+				// Convert PostgreSQL placeholders to SQLite placeholders and expand params
+				const converted = convertPlaceholders(sql, params);
 				const res = await this.client.execute({
-					sql,
-					args: params as InArgs | undefined,
+					sql: converted.sql,
+					args: converted.params as InArgs | undefined,
 				});
 				return { rows: res.rows as U[] };
 			},
 			exec: async (sql: string): Promise<void> => {
-				txStatements.push({ sql });
+				// Convert PostgreSQL placeholders to SQLite placeholders
+				const converted = convertPlaceholders(sql);
+				txStatements.push({ sql: converted.sql });
 			},
 		};
 
