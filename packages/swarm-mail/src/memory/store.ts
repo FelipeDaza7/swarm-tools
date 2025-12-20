@@ -225,10 +225,14 @@ export function createMemoryStore(db: SwarmDb) {
       const { limit = 10, collection } = options;
 
       // FTS5 requires raw SQL - not yet in Drizzle's type-safe API
+      // Quote search query to escape FTS5 operators (hyphens, etc.)
+      // Without quotes, "unique-keyword-12345" → "unique" MINUS "keyword" → error
+      const quotedQuery = `"${searchQuery.replace(/"/g, '""')}"`;
+      
       // Build query dynamically based on collection filter
       const conditions = collection
-        ? sql`fts.content MATCH ${searchQuery} AND m.collection = ${collection}`
-        : sql`fts.content MATCH ${searchQuery}`;
+        ? sql`fts.content MATCH ${quotedQuery} AND m.collection = ${collection}`
+        : sql`fts.content MATCH ${quotedQuery}`;
 
       const results = await db.all<{
         id: string;

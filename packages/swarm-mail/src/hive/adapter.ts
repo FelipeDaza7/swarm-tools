@@ -543,6 +543,25 @@ export function createHiveAdapter(
         isLibSQL = false;
       }
       
+      // Ensure schema_version table exists (idempotent)
+      if (isLibSQL) {
+        await db.exec(`
+          CREATE TABLE IF NOT EXISTS schema_version (
+            version INTEGER PRIMARY KEY,
+            applied_at INTEGER NOT NULL,
+            description TEXT
+          )
+        `);
+      } else {
+        await db.exec(`
+          CREATE TABLE IF NOT EXISTS schema_version (
+            version INTEGER PRIMARY KEY,
+            applied_at BIGINT NOT NULL,
+            description TEXT
+          )
+        `);
+      }
+      
       // Import the correct migration set based on dialect
       const { hiveMigrations, hiveMigrationsLibSQL } = await import("./migrations.js");
       const migrations = isLibSQL ? hiveMigrationsLibSQL : hiveMigrations;
@@ -556,29 +575,30 @@ export function createHiveAdapter(
       // Apply pending migrations
       for (const migration of migrations) {
         if (migration.version > currentVersion) {
-          await db.exec("BEGIN");
-          try {
+          // libSQL's executeMultiple handles transactions internally,
+          // so we don't wrap in BEGIN/COMMIT for libSQL
+          if (isLibSQL) {
             await db.exec(migration.up);
-            
-            // Use dialect-appropriate INSERT syntax
-            if (isLibSQL) {
-              await db.query(
-                `INSERT INTO schema_version (version, applied_at, description) VALUES (?, ?, ?)
-                 ON CONFLICT (version) DO NOTHING`,
-                [migration.version, Date.now(), migration.description],
-              );
-            } else {
+            await db.query(
+              `INSERT INTO schema_version (version, applied_at, description) VALUES (?, ?, ?)
+               ON CONFLICT (version) DO NOTHING`,
+              [migration.version, Date.now(), migration.description],
+            );
+          } else {
+            // PGLite needs explicit transaction
+            await db.exec("BEGIN");
+            try {
+              await db.exec(migration.up);
               await db.query(
                 `INSERT INTO schema_version (version, applied_at, description) VALUES ($1, $2, $3)
                  ON CONFLICT (version) DO NOTHING`,
                 [migration.version, Date.now(), migration.description],
               );
+              await db.exec("COMMIT");
+            } catch (error) {
+              await db.exec("ROLLBACK");
+              throw error;
             }
-            
-            await db.exec("COMMIT");
-          } catch (error) {
-            await db.exec("ROLLBACK");
-            throw error;
           }
         }
       }

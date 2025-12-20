@@ -38,6 +38,7 @@ import {
 	type SearchResult,
 	legacyDatabaseExists,
 	migrateLegacyMemories,
+	toSwarmDb,
 } from "swarm-mail";
 
 // ============================================================================
@@ -139,7 +140,7 @@ export interface OperationResult {
  * 1. Legacy database exists
  * 2. Target database has 0 memories (first use)
  *
- * @param db - Target database adapter
+ * @param db - Target database adapter (for migration and count check)
  */
 async function maybeAutoMigrate(db: DatabaseAdapter): Promise<void> {
 	try {
@@ -148,7 +149,7 @@ async function maybeAutoMigrate(db: DatabaseAdapter): Promise<void> {
 			return;
 		}
 
-		// Check if target database is empty
+		// Check if target database is empty using the legacy adapter
 		const countResult = await db.query<{ count: string }>(
 			"SELECT COUNT(*) as count FROM memories",
 		);
@@ -161,7 +162,7 @@ async function maybeAutoMigrate(db: DatabaseAdapter): Promise<void> {
 
 		console.log("[memory] Legacy database detected, starting auto-migration...");
 
-		// Run migration
+		// Run migration (still uses DatabaseAdapter)
 		const result = await migrateLegacyMemories({
 			targetDb: db,
 			dryRun: false,
@@ -210,16 +211,17 @@ export interface MemoryAdapter {
 /**
  * Create Memory Adapter
  *
- * @param db - DatabaseAdapter (from SwarmMail)
+ * @param db - DatabaseAdapter from swarm-mail's getDatabase()
  * @returns Memory adapter with high-level operations
  *
  * @example
  * ```typescript
- * import { getSwarmMail } from 'swarm-mail';
+ * import { getSwarmMailLibSQL } from 'swarm-mail';
  * import { createMemoryAdapter } from './memory';
  *
- * const swarmMail = await getSwarmMail('/path/to/project');
- * const adapter = await createMemoryAdapter(swarmMail.db);
+ * const swarmMail = await getSwarmMailLibSQL('/path/to/project');
+ * const db = await swarmMail.getDatabase();
+ * const adapter = await createMemoryAdapter(db);
  *
  * await adapter.store({ information: "Learning X" });
  * const results = await adapter.find({ query: "X" });
@@ -234,7 +236,9 @@ export async function createMemoryAdapter(
 		await maybeAutoMigrate(db);
 	}
 
-	const store = createMemoryStore(db);
+	// Convert DatabaseAdapter to SwarmDb (Drizzle client) for createMemoryStore
+	const drizzleDb = toSwarmDb(db);
+	const store = createMemoryStore(drizzleDb);
 	const config = getDefaultConfig();
 	const ollamaLayer = makeOllamaLive(config);
 

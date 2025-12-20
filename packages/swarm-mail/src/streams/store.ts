@@ -879,8 +879,8 @@ async function handleSwarmCheckpointed(
       id, project_key, epic_id, bead_id, strategy, files, dependencies, 
       directives, recovery, created_at, checkpointed_at, updated_at
     ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $10, $10)
-    ON CONFLICT (id) DO UPDATE SET
-      project_key = EXCLUDED.project_key,
+    ON CONFLICT (project_key, epic_id, bead_id) DO UPDATE SET
+      id = EXCLUDED.id,
       strategy = EXCLUDED.strategy,
       files = EXCLUDED.files,
       dependencies = EXCLUDED.dependencies,

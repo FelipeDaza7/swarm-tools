@@ -50,6 +50,7 @@ export type { LibSQLConfig } from "./libsql";
 export {
   getSwarmMailLibSQL,
   createInMemorySwarmMailLibSQL,
+  createInMemorySwarmMailLibSQL as createInMemorySwarmMail, // Alias for backward compatibility
   closeSwarmMailLibSQL,
   closeAllSwarmMailLibSQL,
   getDatabasePath as getLibSQLDatabasePath,
@@ -71,10 +72,53 @@ export {
 } from "./memory/libsql-schema";
 
 // ============================================================================
-// Re-export everything from streams for backward compatibility
+// Streams Module Exports (selective - avoid PGlite WASM loading)
 // ============================================================================
 
-export * from "./streams";
+// NOTE: We import from specific files under streams/, NOT from streams/index.ts
+// to avoid triggering PGlite WASM loading at import time.
+
+// Swarm Mail functions (legacy PGlite-based, deprecated - use adapter instead)
+export {
+  initSwarmAgent,
+  sendSwarmMessage,
+  getSwarmInbox,
+  readSwarmMessage,
+  reserveSwarmFiles,
+  releaseSwarmFiles,
+  acknowledgeSwarmMessage,
+  checkSwarmHealth as checkSwarmMailHealth,
+} from "./streams/swarm-mail";
+
+// Event types and creation (from events.ts)
+export { createEvent } from "./streams/events";
+export type { MailSessionState } from "./streams/events";
+
+// Event store primitives (from store.ts)
+export { appendEvent, readEvents } from "./streams/store";
+
+// Projections (from projections.ts)
+export { getAgent, getActiveReservations } from "./streams/projections";
+
+// Database management - LAZY LOADED via dynamic import to avoid WASM loading
+// Users should call these functions, not import PGlite directly
+export async function getDatabase(projectPath?: string) {
+  const { getDatabase: getDb } = await import("./streams/index.js");
+  return getDb(projectPath);
+}
+
+export async function closeDatabase(projectPath?: string) {
+  const { closeDatabase: closeDb } = await import("./streams/index.js");
+  return closeDb(projectPath);
+}
+
+export async function closeAllDatabases() {
+  const { closeAllDatabases: closeAll } = await import("./streams/index.js");
+  return closeAll();
+}
+
+// Re-export checkSwarmHealth from correct location
+export { checkHealth as checkSwarmHealth } from "./streams/agent-mail";
 
 // ============================================================================
 // Hive Module Exports (work item tracking)
@@ -97,6 +141,8 @@ export type {
   SearchResult,
   SearchOptions,
 } from "./memory/store";
+
+export { createMemoryAdapter } from "./memory/adapter";
 
 export {
   Ollama,
@@ -137,3 +183,15 @@ export type {
   ExportOptions as MemoryExportOptions,
   ImportOptions as MemoryImportOptions,
 } from "./memory/sync";
+
+// Memory test utilities
+export { createTestMemoryDb } from "./memory/test-utils";
+
+// ============================================================================
+// Drizzle Database Client (for memory store)
+// ============================================================================
+
+export { getDb, createInMemoryDb, closeDb } from "./db";
+export { createDrizzleClient } from "./db/drizzle";
+export type { SwarmDb } from "./db";
+export { toSwarmDb } from "./libsql.convenience";

@@ -35,8 +35,6 @@
 import { existsSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
-import { PGlite } from "@electric-sql/pglite";
-import { vector } from "@electric-sql/pglite/vector";
 import type { DatabaseAdapter } from "../types/database.js";
 
 /**
@@ -136,8 +134,12 @@ export async function migrateLegacyMemories(
 
   onProgress(`[migrate] Opening legacy database at ${legacyPath}`);
 
+  // Dynamically import PGlite to avoid loading WASM at module import time
+  const { PGlite } = await import("@electric-sql/pglite");
+  const { vector } = await import("@electric-sql/pglite/vector");
+
   // Open legacy database (read-only)
-  let legacyDb: PGlite;
+  let legacyDb: any;
   try {
     legacyDb = await PGlite.create({
       dataDir: legacyPath,
@@ -152,12 +154,12 @@ export async function migrateLegacyMemories(
 
   try {
     // Check if memories table exists
-    const tableCheck = await legacyDb.query<{ exists: boolean }>(`
+    const tableCheck = await legacyDb.query(`
       SELECT EXISTS (
         SELECT FROM information_schema.tables 
         WHERE table_name = 'memories'
       ) as exists
-    `);
+    `) as { rows: Array<{ exists: boolean }> };
 
     if (!tableCheck.rows[0]?.exists) {
       onProgress(`[migrate] No memories table found in legacy database`);
@@ -165,19 +167,19 @@ export async function migrateLegacyMemories(
     }
 
     // Get all memories from legacy database
-    const memoriesResult = await legacyDb.query<LegacyMemoryRow>(`
+    const memoriesResult = await legacyDb.query(`
       SELECT id, content, metadata, collection, created_at, last_validated_at
       FROM memories
       ORDER BY created_at ASC
-    `);
+    `) as { rows: LegacyMemoryRow[] };
 
     onProgress(`[migrate] Found ${memoriesResult.rows.length} memories to migrate`);
 
     // Get all embeddings
-    const embeddingsResult = await legacyDb.query<LegacyEmbeddingRow>(`
+    const embeddingsResult = await legacyDb.query(`
       SELECT memory_id, embedding::text as embedding
       FROM memory_embeddings
-    `);
+    `) as { rows: LegacyEmbeddingRow[] };
 
     // Create embedding lookup map
     const embeddingMap = new Map<string, number[]>();
@@ -287,11 +289,15 @@ export async function getMigrationStatus(
 ): Promise<{ total: number; withEmbeddings: number } | null> {
   const dbPath = legacyPath || getDefaultLegacyPath();
 
-  if (!existsSync(dbPath)) {
+  if (!legacyDatabaseExists(dbPath)) {
     return null;
   }
 
-  let db: PGlite;
+  // Dynamically import PGlite to avoid loading WASM at module import time
+  const { PGlite } = await import("@electric-sql/pglite");
+  const { vector } = await import("@electric-sql/pglite/vector");
+
+  let db: any;
   try {
     db = await PGlite.create({
       dataDir: dbPath,
@@ -302,13 +308,13 @@ export async function getMigrationStatus(
   }
 
   try {
-    const memoriesCount = await db.query<{ count: string }>(`
+    const memoriesCount = await db.query(`
       SELECT COUNT(*) as count FROM memories
-    `);
+    `) as { rows: Array<{ count: string }> };
 
-    const embeddingsCount = await db.query<{ count: string }>(`
+    const embeddingsCount = await db.query(`
       SELECT COUNT(*) as count FROM memory_embeddings
-    `);
+    `) as { rows: Array<{ count: string }> };
 
     return {
       total: parseInt(memoriesCount.rows[0]?.count || "0"),

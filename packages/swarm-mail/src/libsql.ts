@@ -207,7 +207,8 @@ class LibSQLAdapter implements DatabaseAdapter {
 	async exec(sql: string): Promise<void> {
 		// Convert PostgreSQL placeholders to SQLite placeholders
 		const converted = convertPlaceholders(sql);
-		await this.client.execute(converted.sql);
+		// Use executeMultiple to handle multi-statement SQL (e.g., migrations)
+		await this.client.executeMultiple(converted.sql);
 	}
 
 	async transaction<T>(fn: (tx: DatabaseAdapter) => Promise<T>): Promise<T> {

@@ -319,6 +319,133 @@ export const cellsViewMigrationLibSQL: Migration = {
 };
 
 /**
+ * LibSQL-compatible beads migration (v7)
+ * 
+ * Differences from PGLite version:
+ * - Uses INTEGER PRIMARY KEY AUTOINCREMENT instead of SERIAL
+ * - Uses TEXT (JSON string) instead of TEXT[] for arrays
+ * - Uses INTEGER instead of BIGINT (SQLite treats both as INTEGER anyway)
+ */
+export const beadsMigrationLibSQL: Migration = {
+  version: 7,
+  description: "Add beads tables for issue tracking (LibSQL)",
+  up: `
+    -- ========================================================================
+    -- Core Beads Table
+    -- ========================================================================
+    CREATE TABLE IF NOT EXISTS beads (
+      id TEXT PRIMARY KEY,
+      project_key TEXT NOT NULL,
+      type TEXT NOT NULL CHECK (type IN ('bug', 'feature', 'task', 'epic', 'chore', 'message')),
+      status TEXT NOT NULL DEFAULT 'open' CHECK (status IN ('open', 'in_progress', 'blocked', 'closed', 'tombstone')),
+      title TEXT NOT NULL CHECK (length(title) <= 500),
+      description TEXT,
+      priority INTEGER NOT NULL DEFAULT 2 CHECK (priority BETWEEN 0 AND 3),
+      parent_id TEXT REFERENCES beads(id) ON DELETE SET NULL,
+      assignee TEXT,
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL,
+      closed_at INTEGER,
+      closed_reason TEXT,
+      deleted_at INTEGER,
+      deleted_by TEXT,
+      delete_reason TEXT,
+      created_by TEXT,
+      CHECK ((status = 'closed') = (closed_at IS NOT NULL))
+    );
+
+    -- Indexes for common queries
+    CREATE INDEX IF NOT EXISTS idx_beads_project ON beads(project_key);
+    CREATE INDEX IF NOT EXISTS idx_beads_status ON beads(status);
+    CREATE INDEX IF NOT EXISTS idx_beads_type ON beads(type);
+    CREATE INDEX IF NOT EXISTS idx_beads_priority ON beads(priority);
+    CREATE INDEX IF NOT EXISTS idx_beads_assignee ON beads(assignee);
+    CREATE INDEX IF NOT EXISTS idx_beads_parent ON beads(parent_id);
+    CREATE INDEX IF NOT EXISTS idx_beads_created ON beads(created_at);
+    CREATE INDEX IF NOT EXISTS idx_beads_project_status ON beads(project_key, status);
+
+    -- ========================================================================
+    -- Dependencies Table
+    -- ========================================================================
+    CREATE TABLE IF NOT EXISTS bead_dependencies (
+      cell_id TEXT NOT NULL REFERENCES beads(id) ON DELETE CASCADE,
+      depends_on_id TEXT NOT NULL REFERENCES beads(id) ON DELETE CASCADE,
+      relationship TEXT NOT NULL CHECK (relationship IN ('blocks', 'related', 'parent-child', 'discovered-from', 'replies-to', 'relates-to', 'duplicates', 'supersedes')),
+      created_at INTEGER NOT NULL,
+      created_by TEXT,
+      PRIMARY KEY (cell_id, depends_on_id, relationship)
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_bead_deps_bead ON bead_dependencies(cell_id);
+    CREATE INDEX IF NOT EXISTS idx_bead_deps_depends_on ON bead_dependencies(depends_on_id);
+    CREATE INDEX IF NOT EXISTS idx_bead_deps_relationship ON bead_dependencies(relationship);
+
+    -- ========================================================================
+    -- Labels Table
+    -- ========================================================================
+    CREATE TABLE IF NOT EXISTS bead_labels (
+      cell_id TEXT NOT NULL REFERENCES beads(id) ON DELETE CASCADE,
+      label TEXT NOT NULL,
+      created_at INTEGER NOT NULL,
+      PRIMARY KEY (cell_id, label)
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_bead_labels_label ON bead_labels(label);
+
+    -- ========================================================================
+    -- Comments Table
+    -- ========================================================================
+    CREATE TABLE IF NOT EXISTS bead_comments (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      cell_id TEXT NOT NULL REFERENCES beads(id) ON DELETE CASCADE,
+      author TEXT NOT NULL,
+      body TEXT NOT NULL,
+      parent_id INTEGER REFERENCES bead_comments(id) ON DELETE CASCADE,
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_bead_comments_bead ON bead_comments(cell_id);
+    CREATE INDEX IF NOT EXISTS idx_bead_comments_author ON bead_comments(author);
+    CREATE INDEX IF NOT EXISTS idx_bead_comments_created ON bead_comments(created_at);
+
+    -- ========================================================================
+    -- Blocked Beads Cache
+    -- ========================================================================
+    -- Materialized view for fast blocked queries
+    -- Updated by projections when dependencies change
+    -- Note: SQLite doesn't support arrays, so blocker_ids is a JSON string
+    CREATE TABLE IF NOT EXISTS blocked_beads_cache (
+      cell_id TEXT PRIMARY KEY REFERENCES beads(id) ON DELETE CASCADE,
+      blocker_ids TEXT NOT NULL,
+      updated_at INTEGER NOT NULL
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_blocked_beads_updated ON blocked_beads_cache(updated_at);
+
+    -- ========================================================================
+    -- Dirty Beads Table
+    -- ========================================================================
+    -- Tracks beads that need JSONL export (incremental sync)
+    CREATE TABLE IF NOT EXISTS dirty_beads (
+      cell_id TEXT PRIMARY KEY REFERENCES beads(id) ON DELETE CASCADE,
+      marked_at INTEGER NOT NULL
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_dirty_beads_marked ON dirty_beads(marked_at);
+  `,
+  down: `
+    -- Drop in reverse order to handle foreign key constraints
+    DROP TABLE IF EXISTS dirty_beads;
+    DROP TABLE IF EXISTS blocked_beads_cache;
+    DROP TABLE IF EXISTS bead_comments;
+    DROP TABLE IF EXISTS bead_labels;
+    DROP TABLE IF EXISTS bead_dependencies;
+    DROP TABLE IF EXISTS beads;
+  `,
+};
+
+/**
  * Export individual migrations
  */
 export const beadsMigrations: Migration[] = [beadsMigration];
@@ -331,4 +458,4 @@ export const hiveMigrations: Migration[] = [beadsMigration, cellsViewMigration];
 /**
  * All hive migrations in order (LibSQL version)
  */
-export const hiveMigrationsLibSQL: Migration[] = [beadsMigration, cellsViewMigrationLibSQL];
+export const hiveMigrationsLibSQL: Migration[] = [beadsMigrationLibSQL, cellsViewMigrationLibSQL];

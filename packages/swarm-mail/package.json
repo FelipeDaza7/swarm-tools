@@ -30,7 +30,7 @@
   "author": "Joel Hooks",
   "license": "MIT",
   "scripts": {
-    "build": "bun build ./src/index.ts --outdir ./dist --target node --external @libsql/client && tsc",
+    "build": "bun build ./src/index.ts --outdir ./dist --target node --external @libsql/client --external @electric-sql/pglite && tsc",
     "test": "bun test src/streams/ src/memory/ src/hive/ --timeout 60000",
     "test:beads": "bun test src/beads/ --timeout 60000",
     "test:integration": "vitest run src/streams/**/*.integration-test.ts --testTimeout 60000",

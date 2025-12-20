@@ -77,8 +77,10 @@ async function getMemoryAdapter(
 
 	// Create new adapter
 	const swarmMail = await getSwarmMailLibSQL(path);
-	const db = await swarmMail.getDatabase();
-	cachedAdapter = await createMemoryAdapter(db);
+	const dbAdapter = await swarmMail.getDatabase();
+	
+	// createMemoryAdapter now accepts DatabaseAdapter directly and converts internally
+	cachedAdapter = await createMemoryAdapter(dbAdapter);
 	cachedProjectPath = path;
 
 	return cachedAdapter;

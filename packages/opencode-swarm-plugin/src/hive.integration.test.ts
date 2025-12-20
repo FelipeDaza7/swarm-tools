@@ -1353,6 +1353,86 @@ describe("beads integration", () => {
   });
 
   describe("hive_sync", () => {
+    it("succeeds with unstaged changes outside .hive/ (stash-before-pull)", async () => {
+      const { mkdirSync, rmSync, writeFileSync, existsSync } = await import("node:fs");
+      const { join } = await import("node:path");
+      const { tmpdir } = await import("node:os");
+      const { execSync } = await import("node:child_process");
+
+      // Create a temp git repository with a remote (to trigger pull)
+      const tempProject = join(tmpdir(), `hive-sync-stash-test-${Date.now()}`);
+      const remoteProject = join(tmpdir(), `hive-sync-remote-${Date.now()}`);
+      
+      // Create "remote" bare repo
+      mkdirSync(remoteProject, { recursive: true });
+      execSync("git init --bare", { cwd: remoteProject });
+      
+      // Create local repo
+      mkdirSync(tempProject, { recursive: true });
+      execSync("git init", { cwd: tempProject });
+      execSync('git config user.email "test@example.com"', { cwd: tempProject });
+      execSync('git config user.name "Test User"', { cwd: tempProject });
+      execSync(`git remote add origin ${remoteProject}`, { cwd: tempProject });
+
+      // Create .hive directory and a source file
+      const hiveDir = join(tempProject, ".hive");
+      mkdirSync(hiveDir, { recursive: true });
+      writeFileSync(join(hiveDir, "issues.jsonl"), "");
+      writeFileSync(join(tempProject, "src.ts"), "// initial");
+
+      // Initial commit and push
+      execSync("git add .", { cwd: tempProject });
+      execSync('git commit -m "initial commit"', { cwd: tempProject });
+      execSync("git push -u origin main", { cwd: tempProject });
+
+      // Now create unstaged changes OUTSIDE .hive/
+      writeFileSync(join(tempProject, "src.ts"), "// modified but not staged");
+
+      // Set working directory for hive commands
+      const originalDir = getHiveWorkingDirectory();
+      setHiveWorkingDirectory(tempProject);
+
+      try {
+        // Create a cell (this will mark it dirty and flush will write to JSONL)
+        await hive_create.execute(
+          { title: "Stash test cell", type: "task" },
+          mockContext,
+        );
+
+        // Sync WITH auto_pull=true (this is where the bug manifests)
+        // Before fix: fails with "cannot pull with rebase: You have unstaged changes"
+        // After fix: stashes, pulls, pops, succeeds
+        const result = await hive_sync.execute(
+          { auto_pull: true },
+          mockContext,
+        );
+
+        // Should succeed
+        expect(result).toContain("successfully");
+
+        // Verify .hive changes were committed
+        const hiveStatus = execSync("git status --porcelain .hive/", {
+          cwd: tempProject,
+          encoding: "utf-8",
+        });
+        expect(hiveStatus.trim()).toBe("");
+
+        // Verify unstaged changes are still there (stash was popped)
+        const srcStatus = execSync("git status --porcelain src.ts", {
+          cwd: tempProject,
+          encoding: "utf-8",
+        });
+        expect(srcStatus.trim()).toContain("M src.ts");
+      } finally {
+        // Restore original working directory
+        setHiveWorkingDirectory(originalDir);
+
+        // Cleanup
+        rmSync(tempProject, { recursive: true, force: true });
+        rmSync(remoteProject, { recursive: true, force: true });
+      }
+    });
+
     it("commits .hive changes before pulling (regression test for unstaged changes error)", async () => {
       const { mkdirSync, rmSync, writeFileSync, existsSync } = await import("node:fs");
       const { join } = await import("node:path");

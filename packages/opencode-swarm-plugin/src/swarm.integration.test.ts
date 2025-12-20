@@ -90,7 +90,7 @@ describe("swarm_decompose", () => {
     expect(parsed).toHaveProperty("expected_schema", "CellTree");
     expect(parsed).toHaveProperty("schema_hint");
     expect(parsed.prompt).toContain("Add user authentication with OAuth");
-    expect(parsed.prompt).toContain("2-3 independent subtasks");
+    expect(parsed.prompt).toContain("as many as needed");
   });
 
   it("includes context in prompt when provided", async () => {
@@ -120,8 +120,8 @@ describe("swarm_decompose", () => {
 
     const parsed = JSON.parse(result);
 
-    // Default is 5
-    expect(parsed.prompt).toContain("2-5 independent subtasks");
+    // Prompt should say "as many as needed" (max_subtasks no longer in template)
+    expect(parsed.prompt).toContain("as many as needed");
   });
 });
 
@@ -398,7 +398,7 @@ describe("swarm_plan_prompt", () => {
     );
     const parsed = JSON.parse(result);
 
-    expect(parsed.prompt).toContain("2-7 independent subtasks");
+    expect(parsed.prompt).toContain("as many as needed");
   });
 });
 
@@ -1842,8 +1842,8 @@ describe("Checkpoint/Recovery Flow (integration)", () => {
         }>(
           `SELECT id, epic_id, bead_id, strategy, files, recovery 
            FROM swarm_contexts 
-           WHERE bead_id = $1`,
-          [beadId],
+           WHERE project_key = $1 AND bead_id = $2`,
+          [uniqueProjectKey, beadId],
         );
 
         expect(dbResult.rows.length).toBe(1);
@@ -1901,8 +1901,8 @@ describe("Checkpoint/Recovery Flow (integration)", () => {
 
         // Verify error_context was stored
         const dbResult = await db.query<{ recovery: string }>(
-          `SELECT recovery FROM swarm_contexts WHERE bead_id = $1`,
-          ["bd-error-test.1"],
+          `SELECT recovery FROM swarm_contexts WHERE project_key = $1 AND bead_id = $2`,
+          [uniqueProjectKey, "bd-error-test.1"],
         );
 
         const recoveryRaw = dbResult.rows[0].recovery;

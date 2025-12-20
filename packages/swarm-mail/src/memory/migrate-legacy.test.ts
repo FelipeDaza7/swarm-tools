@@ -89,6 +89,16 @@ describe("Legacy Memory Migration", () => {
     test("returns false for non-existent path", () => {
       expect(legacyDatabaseExists("/nonexistent/path")).toBe(false);
     });
+    
+    test("returns false for directory without PGlite data files", () => {
+      // Create an empty directory (no pglite.data file)
+      const emptyDir = mkdtempSync(join(tmpdir(), "empty-dir-"));
+      try {
+        expect(legacyDatabaseExists(emptyDir)).toBe(false);
+      } finally {
+        rmSync(emptyDir, { recursive: true, force: true });
+      }
+    });
   });
 
   describe("getMigrationStatus", () => {

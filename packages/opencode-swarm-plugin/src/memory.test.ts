@@ -17,12 +17,79 @@ describe("memory adapter", () => {
 	let swarmMail: SwarmMailAdapter;
 	let adapter: MemoryAdapter;
 
-	beforeAll(async () => {
-		// Create in-memory SwarmMail with memory support
-		swarmMail = await createInMemorySwarmMail("test-memory");
-		const db = await swarmMail.getDatabase();
-		adapter = await createMemoryAdapter(db);
-	});
+beforeAll(async () => {
+	// Create in-memory SwarmMail
+	swarmMail = await createInMemorySwarmMail("test-memory");
+	const db = await swarmMail.getDatabase();
+	
+	// Create memory schema manually (matches libsql-schema.ts / migration 9)
+	// Note: test-utils.ts has outdated schema - don't use it
+	
+	// Create memories table with vector column
+	await db.getClient().execute(`
+		CREATE TABLE memories (
+			id TEXT PRIMARY KEY,
+			content TEXT NOT NULL,
+			metadata TEXT DEFAULT '{}',
+			collection TEXT DEFAULT 'default',
+			tags TEXT DEFAULT '[]',
+			created_at TEXT DEFAULT (datetime('now')),
+			updated_at TEXT DEFAULT (datetime('now')),
+			decay_factor REAL DEFAULT 0.7,
+			embedding F32_BLOB(1024)
+		)
+	`);
+	
+	// Create FTS5 virtual table - MUST include id column
+	// (test-utils.ts has outdated schema without id - don't copy from there)
+	await db.getClient().execute(`
+		CREATE VIRTUAL TABLE memories_fts USING fts5(
+			id UNINDEXED,
+			content,
+			content='memories',
+			content_rowid='rowid'
+		)
+	`);
+	
+	// Create triggers to keep FTS in sync
+	await db.getClient().execute(`
+		CREATE TRIGGER memories_fts_insert
+		AFTER INSERT ON memories 
+		BEGIN
+			INSERT INTO memories_fts(rowid, id, content) 
+			VALUES (new.rowid, new.id, new.content);
+		END
+	`);
+	await db.getClient().execute(`
+		CREATE TRIGGER memories_fts_delete
+		AFTER DELETE ON memories 
+		BEGIN
+			DELETE FROM memories_fts WHERE rowid = old.rowid;
+		END
+	`);
+	await db.getClient().execute(`
+		CREATE TRIGGER memories_fts_update
+		AFTER UPDATE ON memories 
+		BEGIN
+			UPDATE memories_fts 
+			SET content = new.content 
+			WHERE rowid = new.rowid;
+		END
+	`);
+	
+	// Create vector index for similarity search (required for vector_top_k)
+	await db.getClient().execute(`
+		CREATE INDEX idx_memories_embedding ON memories(libsql_vector_idx(embedding))
+	`);
+	
+	// Insert a dummy memory to prevent auto-migration from running
+	await db.getClient().execute(`
+		INSERT INTO memories (id, content, collection, created_at)
+		VALUES ('mem_init', 'Test setup marker', 'default', datetime('now'))
+	`);
+	
+	adapter = await createMemoryAdapter(db);
+});
 
 	afterAll(async () => {
 		await swarmMail.close();
@@ -255,6 +322,19 @@ describe("auto-migration on createMemoryAdapter", () => {
 		// For this implementation, we're testing the happy path
 		const swarmMail = await createInMemorySwarmMail("test-auto-migrate");
 		const db = await swarmMail.getDatabase();
+		await db.getClient().execute(`
+			CREATE TABLE IF NOT EXISTS memories (
+				id TEXT PRIMARY KEY,
+				content TEXT NOT NULL,
+				metadata TEXT DEFAULT '{}',
+				collection TEXT DEFAULT 'default',
+				tags TEXT DEFAULT '[]',
+				created_at TEXT DEFAULT (datetime('now')),
+				updated_at TEXT DEFAULT (datetime('now')),
+				decay_factor REAL DEFAULT 1.0,
+				embedding F32_BLOB(1024)
+			)
+		`);
 		
 		// Should not throw even if legacy DB exists
 		const adapter = await createMemoryAdapter(db);
@@ -274,6 +354,19 @@ describe("auto-migration on createMemoryAdapter", () => {
 		
 		const swarmMail = await createInMemorySwarmMail("test-no-legacy");
 		const db = await swarmMail.getDatabase();
+		await db.getClient().execute(`
+			CREATE TABLE IF NOT EXISTS memories (
+				id TEXT PRIMARY KEY,
+				content TEXT NOT NULL,
+				metadata TEXT DEFAULT '{}',
+				collection TEXT DEFAULT 'default',
+				tags TEXT DEFAULT '[]',
+				created_at TEXT DEFAULT (datetime('now')),
+				updated_at TEXT DEFAULT (datetime('now')),
+				decay_factor REAL DEFAULT 1.0,
+				embedding F32_BLOB(1024)
+			)
+		`);
 		
 		// Should not throw or log errors
 		const adapter = await createMemoryAdapter(db);
@@ -285,6 +378,19 @@ describe("auto-migration on createMemoryAdapter", () => {
 	test("skips auto-migration when target already has data", async () => {
 		const swarmMail = await createInMemorySwarmMail("test-has-data");
 		const db = await swarmMail.getDatabase();
+		await db.getClient().execute(`
+			CREATE TABLE IF NOT EXISTS memories (
+				id TEXT PRIMARY KEY,
+				content TEXT NOT NULL,
+				metadata TEXT DEFAULT '{}',
+				collection TEXT DEFAULT 'default',
+				tags TEXT DEFAULT '[]',
+				created_at TEXT DEFAULT (datetime('now')),
+				updated_at TEXT DEFAULT (datetime('now')),
+				decay_factor REAL DEFAULT 1.0,
+				embedding F32_BLOB(1024)
+			)
+		`);
 		
 		// Reset flag to ensure first call checks migration
 		resetMigrationCheck();
@@ -312,6 +418,19 @@ describe("auto-migration on createMemoryAdapter", () => {
 	test("migration check only runs once per module lifetime", async () => {
 		const swarmMail = await createInMemorySwarmMail("test-once");
 		const db = await swarmMail.getDatabase();
+		await db.getClient().execute(`
+			CREATE TABLE IF NOT EXISTS memories (
+				id TEXT PRIMARY KEY,
+				content TEXT NOT NULL,
+				metadata TEXT DEFAULT '{}',
+				collection TEXT DEFAULT 'default',
+				tags TEXT DEFAULT '[]',
+				created_at TEXT DEFAULT (datetime('now')),
+				updated_at TEXT DEFAULT (datetime('now')),
+				decay_factor REAL DEFAULT 1.0,
+				embedding F32_BLOB(1024)
+			)
+		`);
 		
 		// First call - may do migration
 		const adapter1 = await createMemoryAdapter(db);

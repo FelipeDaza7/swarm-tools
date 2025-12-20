@@ -1217,18 +1217,43 @@ export const hive_sync = tool({
       const hasRemote = remoteCheckResult.stdout.trim() !== "";
 
       if (hasRemote) {
-        const pullResult = await withTimeout(
-          runGitCommand(["pull", "--rebase"]),
-          TIMEOUT_MS,
-          "git pull --rebase",
-        );
+        // Check for unstaged changes that would block pull --rebase
+        const statusResult = await runGitCommand(["status", "--porcelain"]);
+        const hasUnstagedChanges = statusResult.stdout.trim() !== "";
+        let didStash = false;
 
-        if (pullResult.exitCode !== 0) {
-          throw new HiveError(
-            `Failed to pull: ${pullResult.stderr}`,
+        if (hasUnstagedChanges) {
+          // Stash all changes (including untracked) before pull
+          const stashResult = await runGitCommand(["stash", "push", "-u", "-m", "hive_sync: auto-stash before pull"]);
+          if (stashResult.exitCode === 0) {
+            didStash = true;
+          }
+          // If stash fails (e.g., nothing to stash), continue anyway
+        }
+
+        try {
+          const pullResult = await withTimeout(
+            runGitCommand(["pull", "--rebase"]),
+            TIMEOUT_MS,
             "git pull --rebase",
-            pullResult.exitCode,
           );
+
+          if (pullResult.exitCode !== 0) {
+            throw new HiveError(
+              `Failed to pull: ${pullResult.stderr}`,
+              "git pull --rebase",
+              pullResult.exitCode,
+            );
+          }
+        } finally {
+          // Pop stash if we stashed
+          if (didStash) {
+            const popResult = await runGitCommand(["stash", "pop"]);
+            if (popResult.exitCode !== 0) {
+              // Stash pop failed - likely a conflict. Log warning but don't fail sync.
+              console.warn(`[hive_sync] Warning: stash pop failed. Your changes are in 'git stash list'. Error: ${popResult.stderr}`);
+            }
+          }
         }
       }
     }

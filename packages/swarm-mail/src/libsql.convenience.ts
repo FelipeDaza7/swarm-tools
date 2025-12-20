@@ -21,11 +21,14 @@
  * ```
  */
 
+import type { Client } from "@libsql/client";
 import { createHash } from "node:crypto";
 import { existsSync, mkdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, join } from "node:path";
 import { createSwarmMailAdapter } from "./adapter.js";
+import { createDrizzleClient } from "./db/drizzle.js";
+import type { SwarmDb } from "./db/client.js";
 import { createLibSQLAdapter } from "./libsql.js";
 import { createLibSQLStreamsSchema } from "./streams/libsql-schema.js";
 import type { SwarmMailAdapter } from "./types/adapter.js";
@@ -208,4 +211,33 @@ export async function closeAllSwarmMailLibSQL(): Promise<void> {
 
   await Promise.all(closePromises);
   instances.clear();
+}
+
+/**
+ * Convert a DatabaseAdapter to a SwarmDb (Drizzle database)
+ * 
+ * This is useful when you have a DatabaseAdapter from getSwarmMailLibSQL()
+ * but need a SwarmDb for the memory store.
+ * 
+ * @param adapter - DatabaseAdapter (must be a LibSQLAdapter internally)
+ * @returns SwarmDb (Drizzle database)
+ * @throws Error if adapter doesn't have getClient() method
+ * 
+ * @example
+ * ```typescript
+ * const swarmMail = await getSwarmMailLibSQL('/path/to/project');
+ * const dbAdapter = await swarmMail.getDatabase();
+ * const drizzleDb = toSwarmDb(dbAdapter);
+ * 
+ * // Now use drizzleDb with memory store
+ * const store = createMemoryStore(drizzleDb);
+ * ```
+ */
+export function toSwarmDb(adapter: DatabaseAdapter): SwarmDb {
+  // LibSQLAdapter has a getClient() method that returns the underlying libSQL client
+  const adapterWithClient = adapter as { getClient?: () => Client };
+  if (!adapterWithClient.getClient) {
+    throw new Error("DatabaseAdapter does not have getClient() method - must be a LibSQLAdapter");
+  }
+  return createDrizzleClient(adapterWithClient.getClient());
 }

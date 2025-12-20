@@ -484,9 +484,11 @@ async function initializeSchema(db: PGlite): Promise<void> {
     CREATE INDEX IF NOT EXISTS idx_locks_holder ON locks(holder);
   `);
 
-  // Run schema migrations for Effect-TS durable primitives (cursors, deferred)
-  const { runMigrations } = await import("./migrations");
-  await runMigrations(db);
+  // NOTE: PGlite schema is self-contained above. 
+  // libSQL migrations (runMigrations) are NOT called here because:
+  // 1. PGlite uses PostgreSQL syntax, libSQL uses SQLite syntax
+  // 2. PGlite is deprecated - use libSQL adapter instead
+  // 3. The migrations expect DatabaseAdapter interface, not PGlite
 }
 
 // ============================================================================
