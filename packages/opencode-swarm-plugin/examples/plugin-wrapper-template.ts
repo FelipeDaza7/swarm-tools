@@ -906,6 +906,252 @@ interface SwarmDetection {
 }
 
 /**
+ * Structured state snapshot for LLM-powered compaction
+ * 
+ * This is passed to the lite model to generate a continuation prompt
+ * with concrete data instead of just instructions.
+ */
+interface SwarmStateSnapshot {
+  sessionID: string;
+  detection: {
+    confidence: "high" | "medium" | "low" | "none";
+    reasons: string[];
+  };
+  epic?: {
+    id: string;
+    title: string;
+    status: string;
+    subtasks: Array<{
+      id: string;
+      title: string;
+      status: "open" | "in_progress" | "blocked" | "closed";
+      files: string[];
+      assignedTo?: string;
+    }>;
+  };
+  messages: Array<{
+    from: string;
+    to: string[];
+    subject: string;
+    body: string;
+    timestamp: number;
+    importance?: string;
+  }>;
+  reservations: Array<{
+    agent: string;
+    paths: string[];
+    exclusive: boolean;
+    expiresAt: number;
+  }>;
+}
+
+/**
+ * Query actual swarm state using spawn (like detectSwarm does)
+ * 
+ * Returns structured snapshot of current state for LLM compaction.
+ * Shells out to swarm CLI to get real data.
+ */
+async function querySwarmState(sessionID: string): Promise<SwarmStateSnapshot> {
+  try {
+    // Query cells via swarm CLI
+    const cellsResult = await new Promise<{ exitCode: number; stdout: string }>(
+      (resolve) => {
+        const proc = spawn(SWARM_CLI, ["tool", "hive_query"], {
+          cwd: projectDirectory,
+          stdio: ["ignore", "pipe", "pipe"],
+        });
+        let stdout = "";
+        proc.stdout.on("data", (d) => {
+          stdout += d;
+        });
+        proc.on("close", (exitCode) =>
+          resolve({ exitCode: exitCode ?? 1, stdout }),
+        );
+      },
+    );
+
+    const cells =
+      cellsResult.exitCode === 0 ? JSON.parse(cellsResult.stdout) : [];
+
+    // Find active epic (first unclosed epic with subtasks)
+    const openEpics = cells.filter(
+      (c: { type?: string; status: string }) =>
+        c.type === "epic" && c.status !== "closed",
+    );
+    const epic = openEpics[0];
+
+    // Get subtasks if we have an epic
+    const subtasks =
+      epic && epic.id
+        ? cells.filter(
+            (c: { parent_id?: string }) => c.parent_id === epic.id,
+          )
+        : [];
+
+    // TODO: Query swarm mail for messages and reservations
+    // For MVP, use empty arrays - the fallback chain handles this
+    const messages: SwarmStateSnapshot["messages"] = [];
+    const reservations: SwarmStateSnapshot["reservations"] = [];
+
+    // Run detection for confidence
+    const detection = await detectSwarm();
+
+    return {
+      sessionID,
+      detection: {
+        confidence: detection.confidence,
+        reasons: detection.reasons,
+      },
+      epic: epic
+        ? {
+            id: epic.id,
+            title: epic.title,
+            status: epic.status,
+            subtasks: subtasks.map((s: {
+              id: string;
+              title: string;
+              status: string;
+              files?: string[];
+            }) => ({
+              id: s.id,
+              title: s.title,
+              status: s.status as "open" | "in_progress" | "blocked" | "closed",
+              files: s.files || [],
+            })),
+          }
+        : undefined,
+      messages,
+      reservations,
+    };
+  } catch (err) {
+    // If query fails, return minimal snapshot
+    const detection = await detectSwarm();
+    return {
+      sessionID,
+      detection: {
+        confidence: detection.confidence,
+        reasons: detection.reasons,
+      },
+      messages: [],
+      reservations: [],
+    };
+  }
+}
+
+/**
+ * Generate compaction prompt using LLM
+ * 
+ * Shells out to `opencode run -m <liteModel>` with structured state.
+ * Returns markdown continuation prompt or null on failure.
+ * 
+ * Timeout: 30 seconds
+ */
+async function generateCompactionPrompt(
+  snapshot: SwarmStateSnapshot,
+): Promise<string | null> {
+  try {
+    const liteModel =
+      process.env.OPENCODE_LITE_MODEL || "claude-3-5-haiku-20241022";
+
+    const promptText = `You are generating a continuation prompt for a compacted swarm coordination session.
+
+Analyze this swarm state and generate a structured markdown prompt that will be given to the resumed session:
+
+${JSON.stringify(snapshot, null, 2)}
+
+Generate a prompt following this structure:
+
+# 🐝 Swarm Continuation - [Epic Title or "Unknown"]
+
+You are resuming coordination of an active swarm that was interrupted by context compaction.
+
+## Epic State
+
+**ID:** [epic ID or "Unknown"]
+**Title:** [epic title or "No active epic"]
+**Status:** [X/Y subtasks complete]
+**Project:** ${projectDirectory}
+
+## Subtask Status
+
+### ✅ Completed (N)
+[List completed subtasks with IDs]
+
+### 🚧 In Progress (N)
+[List in-progress subtasks with IDs, files, agents if known]
+
+### 🚫 Blocked (N)
+[List blocked subtasks]
+
+### ⏳ Pending (N)
+[List pending subtasks]
+
+## Next Actions (IMMEDIATE)
+
+[List 3-5 concrete actions with actual commands, using real IDs from the state]
+
+## Coordinator Reminders
+
+- **You are the coordinator** - Don't wait for instructions, orchestrate
+- **Monitor actively** - Check messages every ~10 minutes
+- **Unblock aggressively** - Resolve dependencies immediately
+- **Review thoroughly** - 3-strike rule enforced
+- **Ship it** - When all subtasks done, close the epic
+
+Keep the prompt concise but actionable. Use actual data from the snapshot, not placeholders.`;
+
+    const result = await new Promise<{ exitCode: number; stdout: string; stderr: string }>(
+      (resolve, reject) => {
+        const proc = spawn("opencode", ["run", "-m", liteModel, "--", promptText], {
+          cwd: projectDirectory,
+          stdio: ["ignore", "pipe", "pipe"],
+          timeout: 30000, // 30 second timeout
+        });
+
+        let stdout = "";
+        let stderr = "";
+
+        proc.stdout.on("data", (d) => {
+          stdout += d;
+        });
+        proc.stderr.on("data", (d) => {
+          stderr += d;
+        });
+
+        proc.on("close", (exitCode) => {
+          resolve({ exitCode: exitCode ?? 1, stdout, stderr });
+        });
+
+        proc.on("error", (err) => {
+          reject(err);
+        });
+
+        // Timeout handling
+        setTimeout(() => {
+          proc.kill("SIGTERM");
+          reject(new Error("LLM compaction timeout (30s)"));
+        }, 30000);
+      },
+    );
+
+    if (result.exitCode !== 0) {
+      console.error(
+        "[Swarm Compaction] opencode run failed:",
+        result.stderr,
+      );
+      return null;
+    }
+
+    // Extract the prompt from stdout (LLM may wrap in markdown)
+    const prompt = result.stdout.trim();
+    return prompt.length > 0 ? prompt : null;
+  } catch (err) {
+    console.error("[Swarm Compaction] LLM generation failed:", err);
+    return null;
+  }
+}
+
+/**
  * Check for swarm sign - evidence a swarm passed through
  *
  * Uses multiple signals with different confidence levels:
@@ -1124,11 +1370,16 @@ Include this in your summary:
 "This is an active swarm. Check swarm_status and swarmmail_inbox immediately."
 `;
 
-// Extended hooks type to include experimental compaction hook
+// Extended hooks type to include experimental compaction hook with new prompt API
+type CompactionOutput = {
+  context: string[];
+  prompt?: string; // NEW API from OpenCode PR #5907
+};
+
 type ExtendedHooks = Hooks & {
   "experimental.session.compacting"?: (
     input: { sessionID: string },
-    output: { context: string[] },
+    output: CompactionOutput,
   ) => Promise<void>;
 };
 
@@ -1201,23 +1452,61 @@ export const SwarmPlugin: Plugin = async (
       skills_execute,
     },
 
-    // Swarm-aware compaction hook - injects context based on detection confidence
+    // Swarm-aware compaction hook with LLM-powered continuation prompts
+    // Three-level fallback chain: LLM → static context → detection fallback → none
     "experimental.session.compacting": async (
-      _input: { sessionID: string },
-      output: { context: string[] },
+      input: { sessionID: string },
+      output: CompactionOutput,
     ) => {
       const detection = await detectSwarm();
 
       if (detection.confidence === "high" || detection.confidence === "medium") {
-        // Definite or probable swarm - inject full context
+        // Definite or probable swarm - try LLM-powered compaction
+        try {
+          // Level 1: Query actual state
+          const snapshot = await querySwarmState(input.sessionID);
+
+          // Level 2: Generate prompt with LLM
+          const llmPrompt = await generateCompactionPrompt(snapshot);
+
+          if (llmPrompt) {
+            // SUCCESS: Use LLM-generated prompt
+            const header = `[Swarm compaction: LLM-generated, ${detection.reasons.join(", ")}]\n\n`;
+
+            // Progressive enhancement: use new API if available
+            if ("prompt" in output) {
+              output.prompt = header + llmPrompt;
+            } else {
+              output.context.push(header + llmPrompt);
+            }
+
+            console.log(
+              "[Swarm Compaction] Using LLM-generated continuation prompt",
+            );
+            return;
+          }
+
+          // LLM failed, fall through to static prompt
+          console.log(
+            "[Swarm Compaction] LLM generation returned null, using static prompt",
+          );
+        } catch (err) {
+          // LLM failed, fall through to static prompt
+          console.error(
+            "[Swarm Compaction] LLM generation failed, using static prompt:",
+            err,
+          );
+        }
+
+        // Level 3: Fall back to static context
         const header = `[Swarm detected: ${detection.reasons.join(", ")}]\n\n`;
         output.context.push(header + SWARM_COMPACTION_CONTEXT);
       } else if (detection.confidence === "low") {
-        // Possible swarm - inject fallback detection prompt
+        // Level 4: Possible swarm - inject fallback detection prompt
         const header = `[Possible swarm: ${detection.reasons.join(", ")}]\n\n`;
         output.context.push(header + SWARM_DETECTION_FALLBACK);
       }
-      // confidence === "none" - no injection, probably not a swarm
+      // Level 5: confidence === "none" - no injection, probably not a swarm
     },
   };
 };
