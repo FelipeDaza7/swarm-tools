@@ -525,3 +525,25 @@
 {"id":"mem_mjkaz1iv_p4ibore","information":"Test memory for adapter wiring verification","created_at":"2025-12-24T17:43:49.111Z","tags":"test,memory"}
 {"id":"mem_mjkaz1ol_pkwgcn8","information":"OAuth refresh tokens need 5min buffer before expiry","created_at":"2025-12-24T17:43:49.317Z","metadata":"{\"raw\":\"auth,tokens,oauth\"}","tags":"auth,integration-test"}
 {"id":"mem_mjkaz1qv_n08jk1c","information":"Smoke test verified full tool adapter wiring works end-to-end","created_at":"2025-12-24T17:43:49.399Z","tags":"test,verification"}
+{"id":"mem_mjkbf6a1_mhqaezf","information":"Test memory for tools integration","created_at":"2025-12-24T17:56:21.769Z","tags":"test"}
+{"id":"mem_mjkbf6i0_77offf0","information":"Findable test memory with unique keyword xyztest123","created_at":"2025-12-24T17:56:22.056Z"}
+{"id":"mem_mjkbf97k_db6bxq6","information":"Test memory for adapter wiring verification","created_at":"2025-12-24T17:56:25.568Z","tags":"test,memory"}
+{"id":"mem_mjkbf99t_2duh0og","information":"OAuth refresh tokens need 5min buffer before expiry","created_at":"2025-12-24T17:56:25.650Z","metadata":"{\"raw\":\"auth,tokens,oauth\"}","tags":"auth,integration-test"}
+{"id":"mem_mjkbf9br_n4tg90b","information":"Smoke test verified full tool adapter wiring works end-to-end","created_at":"2025-12-24T17:56:25.719Z","tags":"test,verification"}
+{"id":"mem_mjkbhr0d_3h2ejy4","information":"Test memory for tools integration","created_at":"2025-12-24T17:58:21.949Z","tags":"test"}
+{"id":"mem_mjkbhrfa_hzcy46u","information":"Findable test memory with unique keyword xyztest123","created_at":"2025-12-24T17:58:22.486Z"}
+{"id":"mem_mjkbhu60_nv8kufy","information":"Test memory for adapter wiring verification","created_at":"2025-12-24T17:58:26.040Z","tags":"test,memory"}
+{"id":"mem_mjkbhubx_bdx22vh","information":"OAuth refresh tokens need 5min buffer before expiry","created_at":"2025-12-24T17:58:26.253Z","metadata":"{\"raw\":\"auth,tokens,oauth\"}","tags":"auth,integration-test"}
+{"id":"mem_mjkbhuf0_0s26nsz","information":"Smoke test verified full tool adapter wiring works end-to-end","created_at":"2025-12-24T17:58:26.364Z","tags":"test,verification"}
+{"id":"mem_mjki3x94_epfn9bx","information":"Test memory for tools integration","created_at":"2025-12-24T21:03:34.168Z","tags":"test"}
+{"id":"mem_mjki3xt5_x48dvkv","information":"Findable test memory with unique keyword xyztest123","created_at":"2025-12-24T21:03:34.889Z"}
+{"id":"mem_mjki5ifa_il44eaz","information":"Test memory for tools integration","created_at":"2025-12-24T21:04:48.262Z","tags":"test"}
+{"id":"mem_mjki5iqd_rpfwxxh","information":"Findable test memory with unique keyword xyztest123","created_at":"2025-12-24T21:04:48.661Z"}
+{"id":"mem_mjki5oqz_9hdazvo","information":"Test memory for adapter wiring verification","created_at":"2025-12-24T21:04:56.459Z","tags":"test,memory"}
+{"id":"mem_mjki5otl_zpsqgba","information":"OAuth refresh tokens need 5min buffer before expiry","created_at":"2025-12-24T21:04:56.553Z","metadata":"{\"raw\":\"auth,tokens,oauth\"}","tags":"auth,integration-test"}
+{"id":"mem_mjki5oxd_qf680ek","information":"Smoke test verified full tool adapter wiring works end-to-end","created_at":"2025-12-24T21:04:56.689Z","tags":"test,verification"}
+{"id":"mem_mjkifo3z_48h5mta","information":"Test memory for tools integration","created_at":"2025-12-24T21:12:42.191Z","tags":"test"}
+{"id":"mem_mjkifog0_kyrf1i8","information":"Findable test memory with unique keyword xyztest123","created_at":"2025-12-24T21:12:42.624Z"}
+{"id":"mem_mjkifrmb_cfzpsbl","information":"Test memory for adapter wiring verification","created_at":"2025-12-24T21:12:46.739Z","tags":"test,memory"}
+{"id":"mem_mjkifrp8_6p3hyc0","information":"OAuth refresh tokens need 5min buffer before expiry","created_at":"2025-12-24T21:12:46.844Z","metadata":"{\"raw\":\"auth,tokens,oauth\"}","tags":"auth,integration-test"}
+{"id":"mem_mjkifrty_n2obcci","information":"Smoke test verified full tool adapter wiring works end-to-end","created_at":"2025-12-24T21:12:47.014Z","tags":"test,verification"}
