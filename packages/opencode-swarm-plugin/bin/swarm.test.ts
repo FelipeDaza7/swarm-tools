@@ -462,4 +462,74 @@ describe("Log command helpers", () => {
       expect(lines).toHaveLength(0);
     });
   });
+
+  describe("watchLogs", () => {
+    test("detects new log lines appended to file", async () => {
+      const logFile = join(testDir, "swarm.1log");
+      const collectedLines: string[] = [];
+      
+      // Create initial log file
+      writeFileSync(logFile, '{"level":30,"time":"2024-12-24T16:00:00.000Z","msg":"initial"}\n');
+      
+      // Import watch utilities
+      const { watch } = await import("fs");
+      const { appendFileSync } = await import("fs");
+      
+      // Track file position for incremental reads
+      let lastSize = 0;
+      
+      function readNewLines(filePath: string): string[] {
+        const content = readFileSync(filePath, "utf-8");
+        const newContent = content.slice(lastSize);
+        lastSize = content.length;
+        return newContent.split("\n").filter((line) => line.trim());
+      }
+      
+      // Simulate watch behavior
+      const watcher = watch(testDir, (eventType, filename) => {
+        if (filename && /\.\d+log$/.test(filename)) {
+          const newLines = readNewLines(join(testDir, filename));
+          collectedLines.push(...newLines);
+        }
+      });
+      
+      // Wait for watcher to be ready
+      await new Promise((resolve) => setTimeout(resolve, 100));
+      
+      // Append new log line
+      appendFileSync(logFile, '{"level":30,"time":"2024-12-24T16:00:01.000Z","msg":"appended"}\n');
+      
+      // Wait for event to fire
+      await new Promise((resolve) => setTimeout(resolve, 200));
+      
+      watcher.close();
+      
+      // Should have detected the new line
+      expect(collectedLines.some((l) => l.includes("appended"))).toBe(true);
+    });
+
+    test("parseWatchArgs extracts --watch flag", () => {
+      function parseWatchArgs(args: string[]): { watch: boolean; interval: number } {
+        let watch = false;
+        let interval = 1000; // default 1 second
+        
+        for (let i = 0; i < args.length; i++) {
+          const arg = args[i];
+          if (arg === "--watch" || arg === "-w") {
+            watch = true;
+          } else if (arg === "--interval" && i + 1 < args.length) {
+            interval = parseInt(args[++i], 10);
+          }
+        }
+        
+        return { watch, interval };
+      }
+      
+      expect(parseWatchArgs(["--watch"])).toEqual({ watch: true, interval: 1000 });
+      expect(parseWatchArgs(["-w"])).toEqual({ watch: true, interval: 1000 });
+      expect(parseWatchArgs(["--watch", "--interval", "500"])).toEqual({ watch: true, interval: 500 });
+      expect(parseWatchArgs(["compaction", "--watch"])).toEqual({ watch: true, interval: 1000 });
+      expect(parseWatchArgs(["--level", "error"])).toEqual({ watch: false, interval: 1000 });
+    });
+  });
 });

@@ -2732,6 +2732,8 @@ ${cyan("Log Viewing:")}
   swarm log --since <duration>         Time filter (30s, 5m, 2h, 1d)
   swarm log --json                     Raw JSON output for jq
   swarm log --limit <n>                Limit output to n lines (default: 50)
+  swarm log --watch, -w                Watch mode - continuously monitor for new logs
+  swarm log --interval <ms>            Poll interval in ms (default: 1000, min: 100)
 
 ${cyan("Usage in OpenCode:")}
   /swarm "Add user authentication with OAuth"
@@ -3203,6 +3205,8 @@ async function logs() {
   let sinceMs: number | null = null;
   let jsonOutput = false;
   let limit = 50;
+  let watchMode = false;
+  let pollInterval = 1000; // 1 second default
   
   for (let i = 0; i < args.length; i++) {
     const arg = args[i];
@@ -3225,7 +3229,15 @@ async function logs() {
         p.log.error(`Invalid limit: ${args[i]}`);
         process.exit(1);
       }
-    } else if (!arg.startsWith("--")) {
+    } else if (arg === "--watch" || arg === "-w") {
+      watchMode = true;
+    } else if (arg === "--interval" && i + 1 < args.length) {
+      pollInterval = parseInt(args[++i], 10);
+      if (isNaN(pollInterval) || pollInterval < 100) {
+        p.log.error(`Invalid interval: ${args[i]} (minimum 100ms)`);
+        process.exit(1);
+      }
+    } else if (!arg.startsWith("--") && !arg.startsWith("-")) {
       // Positional arg = module filter
       moduleFilter = arg;
     }
@@ -3244,6 +3256,131 @@ async function logs() {
     return;
   }
   
+  // Helper to filter logs
+  const filterLogs = (rawLogs: LogLine[]): LogLine[] => {
+    let filtered = rawLogs;
+    
+    if (moduleFilter) {
+      filtered = filtered.filter((log) => log.module === moduleFilter);
+    }
+    
+    if (levelFilter !== null) {
+      filtered = filtered.filter((log) => log.level >= levelFilter);
+    }
+    
+    if (sinceMs !== null) {
+      const cutoffTime = Date.now() - sinceMs;
+      filtered = filtered.filter((log) => new Date(log.time).getTime() >= cutoffTime);
+    }
+    
+    return filtered;
+  };
+  
+  // Watch mode - continuous monitoring
+  if (watchMode) {
+    console.log(yellow(BANNER));
+    console.log(dim(`  Watching logs... (Ctrl+C to stop)`));
+    if (moduleFilter) console.log(dim(`  Module: ${moduleFilter}`));
+    if (levelFilter !== null) console.log(dim(`  Level: >=${levelToName(levelFilter)}`));
+    console.log();
+    
+    // Track file positions for incremental reads
+    const filePositions: Map<string, number> = new Map();
+    
+    // Initialize positions from current file sizes
+    const initializePositions = () => {
+      if (!existsSync(logsDir)) return;
+      const files = readdirSync(logsDir).filter((f: string) => /\.\d+log$/.test(f));
+      for (const file of files) {
+        const filePath = join(logsDir, file);
+        try {
+          const stats = statSync(filePath);
+          filePositions.set(filePath, stats.size);
+        } catch {
+          // Skip unreadable files
+        }
+      }
+    };
+    
+    // Read new lines from a file since last position
+    const readNewLines = (filePath: string): string[] => {
+      try {
+        const stats = statSync(filePath);
+        const lastPos = filePositions.get(filePath) || 0;
+        
+        if (stats.size <= lastPos) {
+          // File was truncated or no new content
+          if (stats.size < lastPos) {
+            filePositions.set(filePath, stats.size);
+          }
+          return [];
+        }
+        
+        const content = readFileSync(filePath, "utf-8");
+        const newContent = content.slice(lastPos);
+        filePositions.set(filePath, stats.size);
+        
+        return newContent.split("\n").filter((line: string) => line.trim());
+      } catch {
+        return [];
+      }
+    };
+    
+    // Print initial logs (last N lines)
+    const rawLines = readLogFiles(logsDir);
+    let logs: LogLine[] = rawLines
+      .map(parseLogLine)
+      .filter((log): log is LogLine => log !== null);
+    logs = filterLogs(logs).slice(-limit);
+    
+    for (const log of logs) {
+      console.log(formatLogLine(log));
+    }
+    
+    // Initialize positions after printing initial logs
+    initializePositions();
+    
+    // Poll for new logs
+    const pollForNewLogs = () => {
+      if (!existsSync(logsDir)) return;
+      
+      const files = readdirSync(logsDir).filter((f: string) => /\.\d+log$/.test(f));
+      
+      for (const file of files) {
+        const filePath = join(logsDir, file);
+        const newLines = readNewLines(filePath);
+        
+        for (const line of newLines) {
+          const parsed = parseLogLine(line);
+          if (parsed) {
+            const filtered = filterLogs([parsed]);
+            if (filtered.length > 0) {
+              console.log(formatLogLine(filtered[0]));
+            }
+          }
+        }
+      }
+    };
+    
+    // Set up polling interval
+    const intervalId = setInterval(pollForNewLogs, pollInterval);
+    
+    // Handle graceful shutdown
+    const cleanup = () => {
+      clearInterval(intervalId);
+      console.log(dim("\n  Stopped watching."));
+      process.exit(0);
+    };
+    
+    process.on("SIGINT", cleanup);
+    process.on("SIGTERM", cleanup);
+    
+    // Keep process alive
+    await new Promise(() => {});
+    return;
+  }
+  
+  // Non-watch mode - one-shot output
   const rawLines = readLogFiles(logsDir);
   
   // Parse and filter
@@ -3251,19 +3388,7 @@ async function logs() {
     .map(parseLogLine)
     .filter((log): log is LogLine => log !== null);
   
-  // Apply filters
-  if (moduleFilter) {
-    logs = logs.filter((log) => log.module === moduleFilter);
-  }
-  
-  if (levelFilter !== null) {
-    logs = logs.filter((log) => log.level >= levelFilter);
-  }
-  
-  if (sinceMs !== null) {
-    const cutoffTime = Date.now() - sinceMs;
-    logs = logs.filter((log) => new Date(log.time).getTime() >= cutoffTime);
-  }
+  logs = filterLogs(logs);
   
   // Apply limit (keep most recent)
   logs = logs.slice(-limit);
