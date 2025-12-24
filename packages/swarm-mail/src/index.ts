@@ -228,6 +228,7 @@ export { createTestMemoryDb } from "./memory/test-utils";
 export type { SwarmDb } from "./db";
 export { closeDb, createInMemoryDb, getDb } from "./db";
 export { createDrizzleClient } from "./db/drizzle";
+export { withSqliteRetry } from "./db/retry";
 export { toDrizzleDb, toSwarmDb } from "./libsql.convenience";
 
 // ============================================================================

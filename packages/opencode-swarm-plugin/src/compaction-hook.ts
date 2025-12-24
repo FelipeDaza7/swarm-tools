@@ -31,6 +31,28 @@
 
 import { getHiveAdapter, getHiveWorkingDirectory } from "./hive";
 import { checkSwarmHealth } from "swarm-mail";
+import { createChildLogger } from "./logger";
+
+let _logger: any | undefined;
+
+/**
+ * Get logger instance (lazy initialization for testability)
+ *
+ * Logs to: ~/.config/swarm-tools/logs/compaction.1log
+ *
+ * Log structure:
+ * - START: session_id, trigger
+ * - GATHER: source (swarm-mail|hive), duration_ms, stats/counts
+ * - DETECT: confidence, detected, reason_count, reasons
+ * - INJECT: confidence, context_length, context_type (full|fallback|none)
+ * - COMPLETE: duration_ms, success, detected, confidence, context_injected
+ */
+function getLog() {
+  if (!_logger) {
+    _logger = createChildLogger("compaction");
+  }
+  return _logger;
+}
 
 // ============================================================================
 // Compaction Context
@@ -178,8 +200,21 @@ async function detectSwarm(): Promise<SwarmDetection> {
     const projectKey = getHiveWorkingDirectory();
 
     // Check 1: Active reservations in swarm-mail (HIGH confidence)
+    const swarmMailStart = Date.now();
     try {
       const health = await checkSwarmHealth(projectKey);
+      const duration = Date.now() - swarmMailStart;
+
+      getLog().debug(
+        {
+          source: "swarm-mail",
+          duration_ms: duration,
+          healthy: health.healthy,
+          stats: health.stats,
+        },
+        "checked swarm-mail health",
+      );
+
       if (health.healthy && health.stats) {
         if (health.stats.reservations > 0) {
           highConfidence = true;
@@ -194,14 +229,24 @@ async function detectSwarm(): Promise<SwarmDetection> {
           reasons.push(`${health.stats.messages} swarm messages`);
         }
       }
-    } catch {
+    } catch (error) {
+      getLog().debug(
+        {
+          source: "swarm-mail",
+          duration_ms: Date.now() - swarmMailStart,
+          error: error instanceof Error ? error.message : String(error),
+        },
+        "swarm-mail check failed",
+      );
       // Swarm-mail not available, continue with other checks
     }
 
     // Check 2: Hive cells (various confidence levels)
+    const hiveStart = Date.now();
     try {
       const adapter = await getHiveAdapter(projectKey);
       const cells = await adapter.queryCells(projectKey, {});
+      const duration = Date.now() - hiveStart;
 
       if (Array.isArray(cells) && cells.length > 0) {
         // HIGH: Any in_progress cells
@@ -213,7 +258,7 @@ async function detectSwarm(): Promise<SwarmDetection> {
 
         // MEDIUM: Open subtasks (cells with parent_id)
         const subtasks = cells.filter(
-          (c) => c.status === "open" && c.parent_id
+          (c) => c.status === "open" && c.parent_id,
         );
         if (subtasks.length > 0) {
           mediumConfidence = true;
@@ -222,7 +267,7 @@ async function detectSwarm(): Promise<SwarmDetection> {
 
         // MEDIUM: Unclosed epics
         const openEpics = cells.filter(
-          (c) => c.type === "epic" && c.status !== "closed"
+          (c) => c.type === "epic" && c.status !== "closed",
         );
         if (openEpics.length > 0) {
           mediumConfidence = true;
@@ -242,14 +287,46 @@ async function detectSwarm(): Promise<SwarmDetection> {
           lowConfidence = true;
           reasons.push(`${cells.length} total cells in hive`);
         }
+
+        getLog().debug(
+          {
+            source: "hive",
+            duration_ms: duration,
+            total_cells: cells.length,
+            in_progress: inProgress.length,
+            open_subtasks: subtasks.length,
+            open_epics: openEpics.length,
+            recent_updates: recentCells.length,
+          },
+          "checked hive cells",
+        );
+      } else {
+        getLog().debug(
+          { source: "hive", duration_ms: duration, total_cells: 0 },
+          "hive empty",
+        );
       }
-    } catch {
+    } catch (error) {
+      getLog().debug(
+        {
+          source: "hive",
+          duration_ms: Date.now() - hiveStart,
+          error: error instanceof Error ? error.message : String(error),
+        },
+        "hive check failed",
+      );
       // Hive not available, continue
     }
-  } catch {
+  } catch (error) {
     // Project detection failed, use fallback
     lowConfidence = true;
     reasons.push("Could not detect project, using fallback");
+    getLog().debug(
+      {
+        error: error instanceof Error ? error.message : String(error),
+      },
+      "project detection failed",
+    );
   }
 
   // Determine overall confidence
@@ -264,11 +341,23 @@ async function detectSwarm(): Promise<SwarmDetection> {
     confidence = "none";
   }
 
-  return {
+  const result = {
     detected: confidence !== "none",
     confidence,
     reasons,
   };
+
+  getLog().debug(
+    {
+      detected: result.detected,
+      confidence: result.confidence,
+      reason_count: result.reasons.length,
+      reasons: result.reasons,
+    },
+    "swarm detection complete",
+  );
+
+  return result;
 }
 
 // ============================================================================
@@ -298,20 +387,89 @@ async function detectSwarm(): Promise<SwarmDetection> {
  */
 export function createCompactionHook() {
   return async (
-    _input: { sessionID: string },
+    input: { sessionID: string },
     output: { context: string[] },
   ): Promise<void> => {
-    const detection = await detectSwarm();
+    const startTime = Date.now();
 
-    if (detection.confidence === "high" || detection.confidence === "medium") {
-      // Definite or probable swarm - inject full context
-      const header = `[Swarm detected: ${detection.reasons.join(", ")}]\n\n`;
-      output.context.push(header + SWARM_COMPACTION_CONTEXT);
-    } else if (detection.confidence === "low") {
-      // Possible swarm - inject fallback detection prompt
-      const header = `[Possible swarm: ${detection.reasons.join(", ")}]\n\n`;
-      output.context.push(header + SWARM_DETECTION_FALLBACK);
+    getLog().info(
+      {
+        session_id: input.sessionID,
+        trigger: "session_compaction",
+      },
+      "compaction started",
+    );
+
+    try {
+      const detection = await detectSwarm();
+
+      if (
+        detection.confidence === "high" ||
+        detection.confidence === "medium"
+      ) {
+        // Definite or probable swarm - inject full context
+        const header = `[Swarm detected: ${detection.reasons.join(", ")}]\n\n`;
+        const contextContent = header + SWARM_COMPACTION_CONTEXT;
+        output.context.push(contextContent);
+
+        getLog().info(
+          {
+            confidence: detection.confidence,
+            context_length: contextContent.length,
+            context_type: "full",
+            reasons: detection.reasons,
+          },
+          "injected swarm context",
+        );
+      } else if (detection.confidence === "low") {
+        // Possible swarm - inject fallback detection prompt
+        const header = `[Possible swarm: ${detection.reasons.join(", ")}]\n\n`;
+        const contextContent = header + SWARM_DETECTION_FALLBACK;
+        output.context.push(contextContent);
+
+        getLog().info(
+          {
+            confidence: detection.confidence,
+            context_length: contextContent.length,
+            context_type: "fallback",
+            reasons: detection.reasons,
+          },
+          "injected swarm context",
+        );
+      } else {
+        getLog().debug(
+          {
+            confidence: detection.confidence,
+            context_type: "none",
+          },
+          "no swarm detected, skipping injection",
+        );
+      }
+      // confidence === "none" - no injection, probably not a swarm
+
+      const duration = Date.now() - startTime;
+      getLog().info(
+        {
+          duration_ms: duration,
+          success: true,
+          detected: detection.detected,
+          confidence: detection.confidence,
+          context_injected: output.context.length > 0,
+        },
+        "compaction complete",
+      );
+    } catch (error) {
+      const duration = Date.now() - startTime;
+      getLog().error(
+        {
+          duration_ms: duration,
+          success: false,
+          error: error instanceof Error ? error.message : String(error),
+          stack: error instanceof Error ? error.stack : undefined,
+        },
+        "compaction failed",
+      );
+      // Don't throw - compaction hook failures shouldn't break the session
     }
-    // confidence === "none" - no injection, probably not a swarm
   };
 }

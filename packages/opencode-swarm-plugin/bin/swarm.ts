@@ -2706,6 +2706,7 @@ ${cyan("Commands:")}
   swarm config    Show paths to generated config files
   swarm agents    Update AGENTS.md with skill awareness
   swarm migrate   Migrate PGlite database to libSQL
+  swarm log       View swarm logs with filtering
   swarm update    Update to latest version
   swarm version   Show version and banner
   swarm tool      Execute a tool (for plugin wrapper)
@@ -2715,6 +2716,14 @@ ${cyan("Tool Execution:")}
   swarm tool --list                    List all available tools
   swarm tool <name>                    Execute tool with no args
   swarm tool <name> --json '<args>'    Execute tool with JSON args
+
+${cyan("Log Viewing:")}
+  swarm log                            Tail recent logs (last 50 lines)
+  swarm log <module>                   Filter by module (e.g., compaction)
+  swarm log --level <level>            Filter by level (trace, debug, info, warn, error, fatal)
+  swarm log --since <duration>         Time filter (30s, 5m, 2h, 1d)
+  swarm log --json                     Raw JSON output for jq
+  swarm log --limit <n>                Limit output to n lines (default: 50)
 
 ${cyan("Usage in OpenCode:")}
   /swarm "Add user authentication with OAuth"
@@ -3045,7 +3054,7 @@ async function migrate() {
     // Show results
     const showStat = (label: string, stat: { migrated: number; skipped: number; failed: number }) => {
       if (stat.migrated > 0 || stat.skipped > 0 || stat.failed > 0) {
-        const parts = [];
+        const parts: string[] = [];
         if (stat.migrated > 0) parts.push(green(`${stat.migrated} migrated`));
         if (stat.skipped > 0) parts.push(dim(`${stat.skipped} skipped`));
         if (stat.failed > 0) parts.push(`\x1b[31m${stat.failed} failed\x1b[0m`);
@@ -3070,6 +3079,207 @@ async function migrate() {
     p.log.error(error instanceof Error ? error.message : String(error));
     p.outro("Migration failed");
     process.exit(1);
+  }
+}
+
+// ============================================================================
+// Log Command - View swarm logs with filtering
+// ============================================================================
+
+interface LogLine {
+  level: number;
+  time: string;
+  module: string;
+  msg: string;
+}
+
+function parseLogLine(line: string): LogLine | null {
+  try {
+    const parsed = JSON.parse(line);
+    if (typeof parsed.level === "number" && parsed.time && parsed.msg) {
+      return {
+        level: parsed.level,
+        time: parsed.time,
+        module: parsed.module || "unknown",
+        msg: parsed.msg,
+      };
+    }
+  } catch {
+    // Invalid JSON
+  }
+  return null;
+}
+
+function levelToName(level: number): string {
+  if (level >= 60) return "FATAL";
+  if (level >= 50) return "ERROR";
+  if (level >= 40) return "WARN ";
+  if (level >= 30) return "INFO ";
+  if (level >= 20) return "DEBUG";
+  return "TRACE";
+}
+
+function levelToColor(level: number): (s: string) => string {
+  if (level >= 50) return (s: string) => `\x1b[31m${s}\x1b[0m`; // red
+  if (level >= 40) return (s: string) => `\x1b[33m${s}\x1b[0m`; // yellow
+  if (level >= 30) return green; // green
+  return dim; // dim for debug/trace
+}
+
+function levelNameToNumber(name: string): number {
+  const lower = name.toLowerCase();
+  if (lower === "fatal") return 60;
+  if (lower === "error") return 50;
+  if (lower === "warn") return 40;
+  if (lower === "info") return 30;
+  if (lower === "debug") return 20;
+  if (lower === "trace") return 10;
+  return 30; // default to info
+}
+
+function parseDuration(duration: string): number | null {
+  const match = duration.match(/^(\d+)([smhd])$/);
+  if (!match) return null;
+  
+  const [, num, unit] = match;
+  const value = parseInt(num, 10);
+  
+  const multipliers: Record<string, number> = {
+    s: 1000,
+    m: 60 * 1000,
+    h: 60 * 60 * 1000,
+    d: 24 * 60 * 60 * 1000,
+  };
+  
+  return value * multipliers[unit];
+}
+
+function formatLogLine(log: LogLine, useColor = true): string {
+  const timestamp = new Date(log.time).toLocaleTimeString();
+  const levelName = levelToName(log.level);
+  const module = log.module.padEnd(12);
+  const levelStr = useColor ? levelToColor(log.level)(levelName) : levelName;
+  
+  return `${timestamp} ${levelStr} ${module} ${log.msg}`;
+}
+
+function readLogFiles(dir: string): string[] {
+  if (!existsSync(dir)) return [];
+  
+  const allFiles = readdirSync(dir);
+  const logFiles = allFiles
+    .filter((f: string) => /\.\d+log$/.test(f))
+    .sort()
+    .map((f: string) => join(dir, f));
+  
+  const lines: string[] = [];
+  for (const file of logFiles) {
+    try {
+      const content = readFileSync(file, "utf-8");
+      const fileLines = content.split("\n").filter((line: string) => line.trim());
+      lines.push(...fileLines);
+    } catch {
+      // Skip unreadable files
+    }
+  }
+  
+  return lines;
+}
+
+async function logs() {
+  const args = process.argv.slice(3);
+  
+  // Parse arguments
+  let moduleFilter: string | null = null;
+  let levelFilter: number | null = null;
+  let sinceMs: number | null = null;
+  let jsonOutput = false;
+  let limit = 50;
+  
+  for (let i = 0; i < args.length; i++) {
+    const arg = args[i];
+    
+    if (arg === "--level" && i + 1 < args.length) {
+      levelFilter = levelNameToNumber(args[++i]);
+    } else if (arg === "--since" && i + 1 < args.length) {
+      const duration = parseDuration(args[++i]);
+      if (duration === null) {
+        p.log.error(`Invalid duration format: ${args[i]}`);
+        p.log.message(dim("  Use format: 30s, 5m, 2h, 1d"));
+        process.exit(1);
+      }
+      sinceMs = duration;
+    } else if (arg === "--json") {
+      jsonOutput = true;
+    } else if (arg === "--limit" && i + 1 < args.length) {
+      limit = parseInt(args[++i], 10);
+      if (isNaN(limit) || limit <= 0) {
+        p.log.error(`Invalid limit: ${args[i]}`);
+        process.exit(1);
+      }
+    } else if (!arg.startsWith("--")) {
+      // Positional arg = module filter
+      moduleFilter = arg;
+    }
+  }
+  
+  // Read logs from ~/.config/swarm-tools/logs/
+  const logsDir = join(homedir(), ".config", "swarm-tools", "logs");
+  
+  if (!existsSync(logsDir)) {
+    if (!jsonOutput) {
+      p.log.warn("No logs directory found");
+      p.log.message(dim(`  Expected: ${logsDir}`));
+    } else {
+      console.log(JSON.stringify({ logs: [] }));
+    }
+    return;
+  }
+  
+  const rawLines = readLogFiles(logsDir);
+  
+  // Parse and filter
+  let logs: LogLine[] = rawLines
+    .map(parseLogLine)
+    .filter((log): log is LogLine => log !== null);
+  
+  // Apply filters
+  if (moduleFilter) {
+    logs = logs.filter((log) => log.module === moduleFilter);
+  }
+  
+  if (levelFilter !== null) {
+    logs = logs.filter((log) => log.level >= levelFilter);
+  }
+  
+  if (sinceMs !== null) {
+    const cutoffTime = Date.now() - sinceMs;
+    logs = logs.filter((log) => new Date(log.time).getTime() >= cutoffTime);
+  }
+  
+  // Apply limit (keep most recent)
+  logs = logs.slice(-limit);
+  
+  // Output
+  if (jsonOutput) {
+    console.log(JSON.stringify({ logs }, null, 2));
+  } else {
+    if (logs.length === 0) {
+      p.log.warn("No logs found matching filters");
+      return;
+    }
+    
+    console.log(yellow(BANNER));
+    console.log(dim(`  Logs (${logs.length} entries)`));
+    if (moduleFilter) console.log(dim(`  Module: ${moduleFilter}`));
+    if (levelFilter !== null) console.log(dim(`  Level: >=${levelToName(levelFilter)}`));
+    if (sinceMs !== null) console.log(dim(`  Since: last ${args[args.indexOf("--since") + 1]}`));
+    console.log();
+    
+    for (const log of logs) {
+      console.log(formatLogLine(log));
+    }
+    console.log();
   }
 }
 
@@ -3215,6 +3425,10 @@ switch (command) {
     break;
   case "db":
     await db();
+    break;
+  case "log":
+  case "logs":
+    await logs();
     break;
   case "version":
   case "--version":

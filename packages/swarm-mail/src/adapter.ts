@@ -24,6 +24,8 @@
  * ```
  */
 
+import { Effect } from "effect";
+import { withSqliteRetry } from "./db/retry";
 import type { DatabaseAdapter } from "./types/database";
 import type { SwarmMailAdapter } from "./types/adapter";
 import type {
@@ -56,6 +58,16 @@ import {
 
 import { appendEvent as appendEventUtil } from "./streams/store";
 import { createEvent } from "./streams/events";
+
+/**
+ * Helper to wrap database write operations with retry logic
+ * Handles SQLITE_BUSY errors with exponential backoff
+ */
+async function withRetry<T>(operation: () => Promise<T>): Promise<T> {
+  return Effect.runPromise(
+    withSqliteRetry(Effect.tryPromise(operation))
+  );
+}
 
 /**
  * Create a SwarmMailAdapter instance
@@ -244,7 +256,7 @@ export function createSwarmMailAdapter(
       // Force checkpoint after migrations to prevent WAL bloat
       // Critical for embedded databases - prevents 930 WAL file accumulation
       if (db.checkpoint) {
-        await db.checkpoint();
+        await withRetry(() => db.checkpoint!());
       }
     },
 
@@ -303,7 +315,7 @@ export function createSwarmMailAdapter(
     },
 
     async resetDatabase(projectPath?) {
-      await db.exec(`
+      await withRetry(() => db.exec(`
 				DELETE FROM message_recipients;
 				DELETE FROM messages;
 				DELETE FROM reservations;
@@ -311,7 +323,7 @@ export function createSwarmMailAdapter(
 				DELETE FROM events;
 				DELETE FROM locks;
 				DELETE FROM cursors;
-			`);
+			`));
     },
 
     // ============================================================================

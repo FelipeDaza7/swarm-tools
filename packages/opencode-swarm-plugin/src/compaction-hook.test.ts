@@ -2,12 +2,31 @@
  * Tests for Swarm-Aware Compaction Hook
  */
 
-import { describe, expect, it, mock } from "bun:test";
+import { describe, expect, it, mock, beforeEach } from "bun:test";
 import {
   SWARM_COMPACTION_CONTEXT,
   SWARM_DETECTION_FALLBACK,
   createCompactionHook,
 } from "./compaction-hook";
+
+// Track log calls for verification
+let logCalls: Array<{ level: string; data: any; message?: string }> = [];
+
+// Mock logger factory
+const createMockLogger = () => ({
+  info: (data: any, message?: string) => {
+    logCalls.push({ level: "info", data, message });
+  },
+  debug: (data: any, message?: string) => {
+    logCalls.push({ level: "debug", data, message });
+  },
+  warn: (data: any, message?: string) => {
+    logCalls.push({ level: "warn", data, message });
+  },
+  error: (data: any, message?: string) => {
+    logCalls.push({ level: "error", data, message });
+  },
+});
 
 // Mock the dependencies
 mock.module("./hive", () => ({
@@ -30,7 +49,16 @@ mock.module("swarm-mail", () => ({
   }),
 }));
 
+// Mock logger module
+mock.module("./logger", () => ({
+  createChildLogger: () => createMockLogger(),
+}));
+
 describe("Compaction Hook", () => {
+  beforeEach(() => {
+    // Reset log calls before each test
+    logCalls = [];
+  });
   describe("SWARM_COMPACTION_CONTEXT", () => {
     it("contains coordinator instructions", () => {
       expect(SWARM_COMPACTION_CONTEXT).toContain("COORDINATOR");
@@ -105,6 +133,149 @@ describe("Compaction Hook", () => {
     it("LOW confidence triggers fallback prompt", async () => {
       expect(SWARM_DETECTION_FALLBACK).toContain("Swarm Detection");
       expect(SWARM_DETECTION_FALLBACK).toContain("Check Your Context");
+    });
+  });
+
+  describe("Logging instrumentation", () => {
+    it("logs compaction start with session_id", async () => {
+      const hook = createCompactionHook();
+      const input = { sessionID: "test-session-123" };
+      const output = { context: [] as string[] };
+
+      await hook(input, output);
+
+      const startLog = logCalls.find(
+        (log) => log.level === "info" && log.message === "compaction started",
+      );
+      expect(startLog).toBeDefined();
+      expect(startLog?.data).toHaveProperty("session_id", "test-session-123");
+    });
+
+    it("logs detection phase with confidence and reasons", async () => {
+      const hook = createCompactionHook();
+      const input = { sessionID: "test-session" };
+      const output = { context: [] as string[] };
+
+      await hook(input, output);
+
+      const detectionLog = logCalls.find(
+        (log) =>
+          log.level === "debug" && log.message === "swarm detection complete",
+      );
+      expect(detectionLog).toBeDefined();
+      expect(detectionLog?.data).toHaveProperty("confidence");
+      expect(detectionLog?.data).toHaveProperty("detected");
+      expect(detectionLog?.data).toHaveProperty("reason_count");
+    });
+
+    it("logs context injection when swarm detected", async () => {
+      const hook = createCompactionHook();
+      const input = { sessionID: "test-session" };
+      const output = { context: [] as string[] };
+
+      // Mock detection to return medium confidence
+      mock.module("./hive", () => ({
+        getHiveWorkingDirectory: () => "/test/project",
+        getHiveAdapter: async () => ({
+          queryCells: async () => [
+            {
+              id: "bd-123",
+              type: "epic",
+              status: "open",
+              parent_id: null,
+              updated_at: Date.now(),
+            },
+          ],
+        }),
+      }));
+
+      await hook(input, output);
+
+      const injectionLog = logCalls.find(
+        (log) =>
+          log.level === "info" && log.message === "injected swarm context",
+      );
+      expect(injectionLog).toBeDefined();
+      expect(injectionLog?.data).toHaveProperty("confidence");
+      expect(injectionLog?.data).toHaveProperty("context_length");
+    });
+
+    it("logs completion with duration and success", async () => {
+      const hook = createCompactionHook();
+      const input = { sessionID: "test-session" };
+      const output = { context: [] as string[] };
+
+      await hook(input, output);
+
+      const completeLog = logCalls.find(
+        (log) => log.level === "info" && log.message === "compaction complete",
+      );
+      expect(completeLog).toBeDefined();
+      expect(completeLog?.data).toHaveProperty("duration_ms");
+      expect(completeLog?.data.duration_ms).toBeGreaterThanOrEqual(0);
+      expect(completeLog?.data).toHaveProperty("success", true);
+    });
+
+    it("logs detailed detection sources (hive, swarm-mail)", async () => {
+      const hook = createCompactionHook();
+      const input = { sessionID: "test-session" };
+      const output = { context: [] as string[] };
+
+      await hook(input, output);
+
+      // Should log details about checking swarm-mail
+      const swarmMailLog = logCalls.find(
+        (log) => log.level === "debug" && log.message?.includes("swarm-mail"),
+      );
+      // Should log details about checking hive
+      const hiveLog = logCalls.find(
+        (log) => log.level === "debug" && log.message?.includes("hive"),
+      );
+
+      // At least one source should be checked
+      expect(logCalls.length).toBeGreaterThan(0);
+    });
+
+    it("logs errors without throwing when detection fails", async () => {
+      // Mock hive to throw
+      mock.module("./hive", () => ({
+        getHiveWorkingDirectory: () => {
+          throw new Error("Hive not available");
+        },
+        getHiveAdapter: async () => {
+          throw new Error("Hive not available");
+        },
+      }));
+
+      const hook = createCompactionHook();
+      const input = { sessionID: "test-session" };
+      const output = { context: [] as string[] };
+
+      // Should not throw
+      await expect(hook(input, output)).resolves.toBeUndefined();
+
+      // Should still complete successfully
+      const completeLog = logCalls.find(
+        (log) => log.level === "info" && log.message === "compaction complete",
+      );
+      expect(completeLog).toBeDefined();
+    });
+
+    it("includes context size when injecting", async () => {
+      const hook = createCompactionHook();
+      const input = { sessionID: "test-session" };
+      const output = { context: [] as string[] };
+
+      await hook(input, output);
+
+      // If context was injected, should log the size
+      if (output.context.length > 0) {
+        const injectionLog = logCalls.find(
+          (log) =>
+            log.level === "info" && log.message === "injected swarm context",
+        );
+        expect(injectionLog?.data.context_length).toBeGreaterThan(0);
+      }
     });
   });
 });

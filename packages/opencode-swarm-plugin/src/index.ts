@@ -685,6 +685,35 @@ export {
 export type { Memory, SearchResult, SearchOptions } from "swarm-mail";
 
 /**
+ * Re-export logger infrastructure
+ *
+ * Includes:
+ * - getLogger - Gets or creates the main logger instance
+ * - createChildLogger - Creates a module-specific child logger with separate log file
+ * - logger - Default logger instance for immediate use
+ *
+ * Features:
+ * - Daily log rotation via pino-roll (numeric format: swarm.1log, swarm.2log, etc.)
+ * - 14-day retention
+ * - Module-specific child loggers
+ * - Pretty mode for development (SWARM_LOG_PRETTY=1)
+ * - Logs to ~/.config/swarm-tools/logs/
+ *
+ * @example
+ * ```typescript
+ * import { logger, createChildLogger } from "opencode-swarm-plugin";
+ *
+ * // Use default logger
+ * logger.info("Application started");
+ *
+ * // Create module-specific logger
+ * const compactionLog = createChildLogger("compaction");
+ * compactionLog.info("Compaction started");
+ * ```
+ */
+export { getLogger, createChildLogger, logger } from "./logger";
+
+/**
  * Re-export swarm-research module
  *
  * Includes:

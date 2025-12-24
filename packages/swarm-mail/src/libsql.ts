@@ -306,5 +306,9 @@ export async function createLibSQLAdapter(
 	// Verify connection with a simple query
 	await client.execute("SELECT 1");
 
+	// Set busy_timeout to 5 seconds for automatic retry on SQLITE_BUSY
+	// This prevents "database is locked" errors during concurrent access
+	await client.execute("PRAGMA busy_timeout = 5000");
+
 	return new LibSQLAdapter(client);
 }
