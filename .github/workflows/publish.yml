@@ -40,43 +40,33 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Read changelog
+        if: steps.changesets.outputs.published == 'true'
+        id: changelog
+        run: |
+          CHANGELOG=$(head -80 packages/opencode-swarm-plugin/CHANGELOG.md)
+          echo "content<<EOF" >> $GITHUB_OUTPUT
+          echo "$CHANGELOG" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+
       - name: Generate release tweet
         if: steps.changesets.outputs.published == 'true'
         id: tweet
-        run: |
-          # Get the changelog content for the main plugin
-          CHANGELOG=$(cat packages/opencode-swarm-plugin/CHANGELOG.md | head -80)
-          
-          # Escape for JSON
-          CHANGELOG_ESCAPED=$(echo "$CHANGELOG" | jq -Rs .)
-          
-          # Call Claude via Vercel AI Gateway (OpenAI-compatible API)
-          RESPONSE=$(curl -s https://api.vercel.ai/v1/chat/completions \
-            -H "Authorization: Bearer ${{ secrets.AI_GATEWAY_API_KEY }}" \
-            -H "Content-Type: application/json" \
-            -d "{
-              \"model\": \"anthropic/claude-sonnet-4-20250514\",
-              \"max_tokens\": 300,
-              \"messages\": [{
-                \"role\": \"user\",
-                \"content\": \"Summarize this changelog into a tweet (max 280 chars) announcing the release from @swarmtoolsai. Be concise and mass-market appealing, highlight the key feature, use 1-2 relevant emoji. No hashtags. Include the version number. Make it sound exciting but not cringe.\\n\\nChangelog:\\n${CHANGELOG_ESCAPED}\"
-              }]
-            }")
-          
-          echo "API Response: $RESPONSE"
-          TWEET=$(echo "$RESPONSE" | jq -r '.choices[0].message.content')
-          echo "Generated tweet: $TWEET"
-          
-          # Save to output (handle multiline)
-          echo "tweet<<EOF" >> $GITHUB_OUTPUT
-          echo "$TWEET" >> $GITHUB_OUTPUT
-          echo "EOF" >> $GITHUB_OUTPUT
+        uses: vercel/ai-action@v2
+        with:
+          model: "anthropic/claude-sonnet-4-20250514"
+          api-key: ${{ secrets.AI_GATEWAY_API_KEY }}
+          prompt: |
+            Summarize this changelog into a tweet (max 280 chars) announcing the release from @swarmtoolsai. Be concise and mass-market appealing, highlight the key feature, use 1-2 relevant emoji. No hashtags. Include the version number. Make it sound exciting but not cringe. Output ONLY the tweet text, nothing else.
+
+            Changelog:
+            ${{ steps.changelog.outputs.content }}
 
       - name: Post to X
-        if: steps.changesets.outputs.published == 'true' && steps.tweet.outputs.tweet != ''
+        if: steps.changesets.outputs.published == 'true' && steps.tweet.outputs.text != ''
         uses: ethomson/send-tweet-action@v1
         with:
-          status: ${{ steps.tweet.outputs.tweet }}
+          status: ${{ steps.tweet.outputs.text }}
           consumer-key: ${{ secrets.X_API_KEY }}
           consumer-secret: ${{ secrets.X_API_SECRET }}
           access-token: ${{ secrets.X_ACCESS_TOKEN }}
