@@ -1029,6 +1029,88 @@ const swarm_get_pattern_insights = tool({
 });
 
 // =============================================================================
+// CASS Tools (Cross-Agent Session Search)
+// =============================================================================
+
+const cass_search = tool({
+  description: "Search across all AI coding agent histories (Claude, Codex, Cursor, Gemini, Aider, ChatGPT, Cline, OpenCode, Amp, Pi-Agent). Query BEFORE solving problems from scratch - another agent may have already solved it. Returns matching sessions ranked by relevance.",
+  args: {
+    query: tool.schema.string().describe("Search query (e.g., 'authentication error Next.js')"),
+    agent: tool.schema
+      .string()
+      .optional()
+      .describe("Filter by agent name (e.g., 'claude', 'cursor')"),
+    days: tool.schema
+      .number()
+      .optional()
+      .describe("Only search sessions from last N days"),
+    limit: tool.schema
+      .number()
+      .optional()
+      .describe("Max results to return (default: 5)"),
+    fields: tool.schema
+      .string()
+      .optional()
+      .describe("Field selection: 'minimal' for compact output (path, line, agent only)"),
+  },
+  execute: (args, ctx) => execTool("cass_search", args, ctx),
+});
+
+const cass_view = tool({
+  description: "View a specific conversation/session from search results. Use source_path from cass_search output.",
+  args: {
+    path: tool.schema
+      .string()
+      .describe("Path to session file (from cass_search results)"),
+    line: tool.schema
+      .number()
+      .optional()
+      .describe("Jump to specific line number"),
+  },
+  execute: (args, ctx) => execTool("cass_view", args, ctx),
+});
+
+const cass_expand = tool({
+  description: "Expand context around a specific line in a session. Shows messages before/after.",
+  args: {
+    path: tool.schema
+      .string()
+      .describe("Path to session file"),
+    line: tool.schema
+      .number()
+      .describe("Line number to expand around"),
+    context: tool.schema
+      .number()
+      .optional()
+      .describe("Number of lines before/after to show (default: 5)"),
+  },
+  execute: (args, ctx) => execTool("cass_expand", args, ctx),
+});
+
+const cass_health = tool({
+  description: "Check if cass index is healthy. Exit 0 = ready, Exit 1 = needs indexing. Run this before searching.",
+  args: {},
+  execute: (args, ctx) => execTool("cass_health", args, ctx),
+});
+
+const cass_index = tool({
+  description: "Build or rebuild the search index. Run this if health check fails or to pick up new sessions.",
+  args: {
+    full: tool.schema
+      .boolean()
+      .optional()
+      .describe("Force full rebuild (default: incremental)"),
+  },
+  execute: (args, ctx) => execTool("cass_index", args, ctx),
+});
+
+const cass_stats = tool({
+  description: "Show index statistics - how many sessions, messages, agents indexed.",
+  args: {},
+  execute: (args, ctx) => execTool("cass_stats", args, ctx),
+});
+
+// =============================================================================
 // Plugin Export
 // =============================================================================
 
@@ -2064,6 +2146,13 @@ const SwarmPlugin: Plugin = async (
       swarm_get_strategy_insights,
       swarm_get_file_insights,
       swarm_get_pattern_insights,
+      // CASS (Cross-Agent Session Search)
+      cass_search,
+      cass_view,
+      cass_expand,
+      cass_health,
+      cass_index,
+      cass_stats,
     },
 
     // Swarm-aware compaction hook with LLM-powered continuation prompts

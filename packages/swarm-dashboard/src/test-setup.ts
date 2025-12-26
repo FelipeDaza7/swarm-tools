@@ -7,15 +7,18 @@
 import { Window } from "happy-dom";
 import { beforeEach, afterEach, spyOn } from "bun:test";
 
-// Create and register happy-dom window
+// Create happy-dom window and inject globals SYNCHRONOUSLY at module load time
+// CRITICAL: This happens during import, before @testing-library/react code runs
 const window = new Window({ url: "http://localhost:3000" });
-const document = window.document;
 
-// Set globals for testing-library
-globalThis.window = window as any;
-globalThis.document = document as any;
-globalThis.navigator = window.navigator as any;
-globalThis.HTMLElement = window.HTMLElement as any;
+// Inject into globalThis immediately (not deferred)
+// These must be set before @testing-library/react imports execute
+Object.defineProperty(globalThis, "window", { value: window, writable: true, configurable: true });
+Object.defineProperty(globalThis, "document", { value: window.document, writable: true, configurable: true });
+Object.defineProperty(globalThis, "navigator", { value: window.navigator, writable: true, configurable: true });
+Object.defineProperty(globalThis, "HTMLElement", { value: window.HTMLElement, writable: true, configurable: true });
+Object.defineProperty(globalThis, "Element", { value: window.Element, writable: true, configurable: true });
+Object.defineProperty(globalThis, "Node", { value: window.Node, writable: true, configurable: true });
 
 // Default cell fixtures for tests
 export const mockCellFixtures = [

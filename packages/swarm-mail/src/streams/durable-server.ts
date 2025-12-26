@@ -9,7 +9,7 @@
  * ## Endpoints
  *
  * GET /cells
- * - Returns all cells from the hive as JSON array
+ * - Returns all cells from the hive as JSON object: { cells: HiveCell[] }
  * - Requires hiveAdapter to be configured
  * - Returns tree structure with parent-child relationships
  *
@@ -116,7 +116,7 @@ export function createDurableStreamServer(
               configProjectKey || "",
               { include_children: true },
             );
-            return new Response(JSON.stringify(cells), {
+            return new Response(JSON.stringify({ cells }), {
               status: 200,
               headers: { "Content-Type": "application/json" },
             });

@@ -42,3 +42,4 @@ npm-debug.log*
 
 # Turborepo
 .turbo
+*.db

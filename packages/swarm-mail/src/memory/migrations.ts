@@ -272,10 +272,66 @@ export const memorySchemaOverhaulLibSQL: Migration = {
 };
 
 /**
+ * Migration v11 (libSQL): Add session metadata columns for CASS inhousing
+ *
+ * Extends the memories table with session tracking fields to support
+ * agent session indexing (ADR-010 CASS inhousing).
+ *
+ * New columns:
+ * - agent_type: Agent that created the session ('opencode-swarm', 'cursor', etc.)
+ * - session_id: Session identifier (file-derived or parsed)
+ * - message_role: Message role ('user' | 'assistant' | 'system')
+ * - message_idx: Line number in original JSONL file
+ * - source_path: Path to original session JSONL file
+ *
+ * These columns enable:
+ * 1. Cross-session search (find similar problems solved by any agent)
+ * 2. Session reconstruction (view original conversation context)
+ * 3. Agent-specific filtering (compare how different agents solve problems)
+ */
+export const sessionMetadataExtensionLibSQL: Migration = {
+  version: 11,
+  description: "Add session metadata columns (agent_type, session_id, message_role, message_idx, source_path)",
+  up: `
+    -- ========================================================================
+    -- Add session metadata columns to memories table
+    -- ========================================================================
+    ALTER TABLE memories ADD COLUMN agent_type TEXT;
+    ALTER TABLE memories ADD COLUMN session_id TEXT;
+    ALTER TABLE memories ADD COLUMN message_role TEXT CHECK(message_role IN ('user', 'assistant', 'system'));
+    ALTER TABLE memories ADD COLUMN message_idx INTEGER;
+    ALTER TABLE memories ADD COLUMN source_path TEXT;
+
+    -- Index for session-based queries
+    CREATE INDEX IF NOT EXISTS idx_memories_session ON memories(session_id, message_idx);
+    
+    -- Index for agent filtering
+    CREATE INDEX IF NOT EXISTS idx_memories_agent_type ON memories(agent_type);
+    
+    -- Index for role filtering
+    CREATE INDEX IF NOT EXISTS idx_memories_role ON memories(message_role);
+  `,
+  down: `
+    -- Drop indexes first
+    DROP INDEX IF EXISTS idx_memories_role;
+    DROP INDEX IF EXISTS idx_memories_agent_type;
+    DROP INDEX IF EXISTS idx_memories_session;
+
+    -- SQLite doesn't support DROP COLUMN until 3.35.0
+    -- In production, these columns can be left as NULL if downgrade is needed
+    -- Or recreate table without these columns
+  `,
+};
+
+/**
  * Export memory migrations array
  */
 export const memoryMigrations: Migration[] = [memoryMigration];
-export const memoryMigrationsLibSQL: Migration[] = [memoryMigrationLibSQL, memorySchemaOverhaulLibSQL];
+export const memoryMigrationsLibSQL: Migration[] = [
+  memoryMigrationLibSQL,
+  memorySchemaOverhaulLibSQL,
+  sessionMetadataExtensionLibSQL
+];
 
 /**
  * Repair stats returned by repairStaleEmbeddings

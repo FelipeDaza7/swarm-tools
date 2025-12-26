@@ -102,6 +102,7 @@ import { makeOllamaLive, Ollama, type MemoryConfig } from "./ollama.js";
 import type { LinkType } from "./memory-linking.js";
 import type { EntityType } from "./entity-extraction.js";
 import type { AutoTagResult as AutoTagServiceResult } from "./auto-tagger.js";
+import { projectSearchResults, type FieldSelection } from "../sessions/pagination.js";
 
 // ============================================================================
 // Types
@@ -161,6 +162,8 @@ export interface FindOptions {
   readonly expand?: boolean;
   /** Use full-text search instead of vector search (default: false) */
   readonly fts?: boolean;
+  /** Field selection for compact output (default: 'full') */
+  readonly fields?: FieldSelection;
 }
 
 /**
@@ -581,7 +584,7 @@ export function createMemoryAdapter(db: SwarmDb, config: MemoryConfig) {
      * @returns Search results with scores
      */
     async find(query: string, options: FindOptions = {}): Promise<SearchResult[]> {
-      const { limit = 10, collection, expand = false, fts = false } = options;
+      const { limit = 10, collection, expand = false, fts = false, fields = "full" } = options;
 
       let results: SearchResult[];
 
@@ -623,7 +626,8 @@ export function createMemoryAdapter(db: SwarmDb, config: MemoryConfig) {
         }));
       }
 
-      return results;
+      // Apply field projection for compact output
+      return projectSearchResults(results, fields) as SearchResult[];
     },
 
     /**

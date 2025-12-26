@@ -1938,6 +1938,74 @@ describe("swarm replay", () => {
   });
 });
 
+describe("swarm viz", () => {
+  test("parses port flag", () => {
+    function parseVizArgs(args: string[]): { port: number } {
+      let port = 4483; // HIVE on phone keypad
+
+      for (let i = 0; i < args.length; i++) {
+        if (args[i] === "--port") {
+          const portNum = Number.parseInt(args[i + 1]);
+          if (!isNaN(portNum) && portNum > 0) {
+            port = portNum;
+          }
+          i++;
+        }
+      }
+
+      return { port };
+    }
+
+    const result = parseVizArgs(["--port", "8080"]);
+    
+    expect(result.port).toBe(8080);
+  });
+
+  test("defaults to port 4483 (HIVE)", () => {
+    function parseVizArgs(args: string[]): { port: number } {
+      let port = 4483;
+
+      for (let i = 0; i < args.length; i++) {
+        if (args[i] === "--port") {
+          const portNum = Number.parseInt(args[i + 1]);
+          if (!isNaN(portNum) && portNum > 0) {
+            port = portNum;
+          }
+          i++;
+        }
+      }
+
+      return { port };
+    }
+
+    const result = parseVizArgs([]);
+    
+    expect(result.port).toBe(4483);
+  });
+
+  test("ignores invalid port values", () => {
+    function parseVizArgs(args: string[]): { port: number } {
+      let port = 4483;
+
+      for (let i = 0; i < args.length; i++) {
+        if (args[i] === "--port") {
+          const portNum = Number.parseInt(args[i + 1]);
+          if (!isNaN(portNum) && portNum > 0) {
+            port = portNum;
+          }
+          i++;
+        }
+      }
+
+      return { port };
+    }
+
+    const result = parseVizArgs(["--port", "invalid"]);
+    
+    expect(result.port).toBe(4483); // Falls back to default
+  });
+});
+
 describe("swarm export", () => {
   test("parses format flag", () => {
     function parseExportArgs(args: string[]): {

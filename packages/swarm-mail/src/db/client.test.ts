@@ -79,4 +79,26 @@ describe("Database Client", () => {
       expect(typeof db.$client).toBe("object");
     });
   });
+
+  describe("worktree resolution", () => {
+    test("resolveDbPath ensures main repo DB path is used", async () => {
+      const { resolveDbPath } = await import("./worktree.js");
+      
+      // Test with a mock path (not a real worktree)
+      const mockPath = "/path/to/project";
+      const dbPath = resolveDbPath(mockPath);
+      
+      // Should return path to .opencode/swarm.db
+      expect(dbPath).toBe("/path/to/project/.opencode/swarm.db");
+    });
+    
+    test("resolveDbPath allows custom database filename", async () => {
+      const { resolveDbPath } = await import("./worktree.js");
+      
+      const mockPath = "/path/to/project";
+      const dbPath = resolveDbPath(mockPath, "custom.db");
+      
+      expect(dbPath).toBe("/path/to/project/.opencode/custom.db");
+    });
+  });
 });

@@ -194,6 +194,20 @@ export * from "./hive";
 // ============================================================================
 
 export { createMemoryAdapter } from "./memory/adapter";
+
+// Pagination API for field selection (token budget optimization)
+export {
+	FIELD_SETS,
+	projectSearchResult,
+	projectSearchResults,
+} from "./sessions/pagination";
+export type {
+	FieldSelection,
+	FieldSet,
+	MemoryField,
+	SearchResultField,
+} from "./sessions/pagination";
+
 export type {
 	MigrationOptions,
 	MigrationResult,
@@ -298,6 +312,16 @@ export { closeDb, createInMemoryDb, getDb } from "./db";
 export { createDrizzleClient } from "./db/drizzle";
 export { withSqliteRetry } from "./db/retry";
 export { toDrizzleDb, toSwarmDb } from "./libsql.convenience";
+
+// ============================================================================
+// Session Management (CASS inhousing)
+// ============================================================================
+
+export { viewSessionLine } from "./sessions/session-viewer";
+export type { SessionViewerOpts } from "./sessions/session-viewer";
+
+export { FileWatcher } from "./sessions/file-watcher";
+export type { FileEvent, FileWatcherOptions } from "./sessions/file-watcher";
 
 // ============================================================================
 // PGlite → libSQL Migration

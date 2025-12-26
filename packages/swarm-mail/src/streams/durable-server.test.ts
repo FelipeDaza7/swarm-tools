@@ -506,21 +506,22 @@ describe("DurableStreamServer GET /cells endpoint", () => {
     await swarmMail.close();
   });
 
-  test("GET /cells returns JSON array", async () => {
+  test("GET /cells returns JSON object with cells array", async () => {
     const response = await fetch(`${server.url}/cells`);
     
     expect(response.status).toBe(200);
     expect(response.headers.get("content-type")).toBe("application/json");
     
-    const cells = await response.json();
-    expect(Array.isArray(cells)).toBe(true);
+    const data = await response.json() as { cells: unknown[] };
+    expect(data).toHaveProperty("cells");
+    expect(Array.isArray(data.cells)).toBe(true);
   });
 
   test("GET /cells returns empty array when no cells exist", async () => {
     const response = await fetch(`${server.url}/cells`);
-    const cells = await response.json();
+    const data = await response.json() as { cells: unknown[] };
     
-    expect(cells).toEqual([]);
+    expect(data.cells).toEqual([]);
   });
 
   test("GET /cells returns created cells", async () => {
@@ -533,11 +534,11 @@ describe("DurableStreamServer GET /cells endpoint", () => {
     });
     
     const response = await fetch(`${server.url}/cells`);
-    const cells = await response.json();
+    const data = await response.json() as { cells: Array<{ id: string; title: string }> };
     
-    expect(cells.length).toBeGreaterThan(0);
-    expect(cells[0].id).toBe(cell.id);
-    expect(cells[0].title).toBe("Test Cell");
+    expect(data.cells.length).toBeGreaterThan(0);
+    expect(data.cells[0].id).toBe(cell.id);
+    expect(data.cells[0].title).toBe("Test Cell");
   });
 
   test("GET /cells without hiveAdapter returns 500", async () => {

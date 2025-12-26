@@ -816,6 +816,119 @@ interface SwarmMailAdapter {
 }
 ```
 
+## Session Indexing
+
+Cross-agent session search and indexing layer for multi-agent conversation history.
+
+**Inspired by [CASS (coding_agent_session_search)](https://github.com/Dicklesworthstone/coding_agent_session_search) by Dicklesworthstone** - we've adapted the session indexing concepts for TypeScript + libSQL.
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│              SESSION INDEXING ARCHITECTURE                  │
+├─────────────────────────────────────────────────────────────┤
+│                                                             │
+│  ┌──────────────┐                                           │
+│  │ Agent Logs   │  (OpenCode, Cursor, Claude, etc.)        │
+│  │  ~/.config/  │                                           │
+│  │  *.jsonl     │                                           │
+│  └──────┬───────┘                                           │
+│         │                                                   │
+│         ▼                                                   │
+│  ┌──────────────────────────────────────────┐               │
+│  │ SessionParser (JSONL → Normalized)       │               │
+│  │  ├─ Line-by-line parsing                │               │
+│  │  └─ Multi-agent format detection        │               │
+│  └──────────────┬───────────────────────────┘               │
+│                 │                                           │
+│                 ▼                                           │
+│  ┌──────────────────────────────────────────┐               │
+│  │ ChunkProcessor (Message-level chunks)    │               │
+│  │  ├─ Sliding window (512 token chunks)    │               │
+│  │  ├─ Ollama embeddings (mxbai-embed-large)│               │
+│  │  └─ Store in semantic-memory             │               │
+│  └──────────────┬───────────────────────────┘               │
+│                 │                                           │
+│                 ▼                                           │
+│  ┌──────────────────────────────────────────┐               │
+│  │ libSQL Storage (via semantic-memory)     │               │
+│  │  ├─ memories table (vector search)       │               │
+│  │  ├─ metadata (agent, session, timestamp) │               │
+│  │  └─ pgvector similarity search           │               │
+│  └──────────────┬───────────────────────────┘               │
+│                 │                                           │
+│                 ▼                                           │
+│  ┌──────────────────────────────────────────┐               │
+│  │ StalenessDetector (index freshness)      │               │
+│  │  ├─ Track indexed sessions + mtimes      │               │
+│  │  ├─ Detect new/modified files            │               │
+│  │  └─ Trigger re-indexing when needed      │               │
+│  └──────────────┬───────────────────────────┘               │
+│                 │                                           │
+│                 ▼                                           │
+│  ┌──────────────────────────────────────────┐               │
+│  │ Search API (cass_* plugin tools)         │               │
+│  │  ├─ Semantic search (vector similarity)  │               │
+│  │  ├─ Full-text search (FTS5)              │               │
+│  │  ├─ Pagination + field projection        │               │
+│  │  └─ Session viewer (expand context)      │               │
+│  └──────────────────────────────────────────┘               │
+│                                                             │
+└─────────────────────────────────────────────────────────────┘
+```
+
+### Components
+
+| Component | Purpose | Key Methods |
+|-----------|---------|-------------|
+| **ChunkProcessor** | Message-level chunking + embedding | `processMessage()`, `generateEmbedding()` |
+| **SessionParser** | JSONL → NormalizedMessage | `parseLine()`, `detectAgent()` |
+| **SessionViewer** | Line-by-line JSONL reader | `readLines()`, `expandContext()` |
+| **StalenessDetector** | Index freshness tracking | `recordIndexed()`, `checkStaleness()` |
+| **Pagination** | Field projection for compact output | `projectSearchResult()`, `FIELD_SETS` |
+
+### Usage
+
+```typescript
+import { ChunkProcessor, StalenessDetector } from "swarm-mail";
+import { createSemanticMemory } from "swarm-mail";
+
+// 1. Initialize semantic memory (vector store)
+const memory = await createSemanticMemory("/my/project");
+
+// 2. Create chunk processor
+const processor = new ChunkProcessor(memory);
+
+// 3. Process a session message
+const chunks = await processor.processMessage({
+  session_id: "abc123",
+  agent: "opencode",
+  timestamp: Date.now(),
+  role: "assistant",
+  content: "Message text...",
+});
+
+// 4. Search across indexed sessions
+const results = await memory.find("authentication error", { limit: 5 });
+
+// 5. Check if re-indexing needed
+const detector = new StalenessDetector(memory);
+await detector.recordIndexed("/path/to/session.jsonl", Date.now());
+const isStale = await detector.checkStaleness("/path/to/session.jsonl");
+```
+
+### Plugin Integration
+
+The session indexing layer powers the `cass_*` plugin tools (see AGENTS.md):
+
+- `cass_search` - Search across all agent histories
+- `cass_view` - View specific session
+- `cass_expand` - Expand context around line
+- `cass_index` - Build/rebuild index
+- `cass_health` - Check index readiness
+- `cass_stats` - Show index statistics
+
+**Before solving problems from scratch, query the index** - another agent may have already solved it.
+
 ## Resources
 
 - **Documentation:** [swarmtools.ai/docs](https://swarmtools.ai/docs)

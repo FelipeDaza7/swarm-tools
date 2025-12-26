@@ -2919,6 +2919,8 @@ ${cyan("Commands:")}
   swarm migrate   Migrate PGlite database to libSQL
   swarm serve     Start SSE server for real-time event streaming
     --port <n>          Port to listen on (default: 3001)
+  swarm viz       Start dashboard server (port 4483 - HIVE on phone keypad)
+    --port <n>          Port to listen on (default: 4483)
   swarm cells     List or get cells from database (replaces 'swarm tool hive_query')
   swarm log       View swarm logs with filtering
   swarm stats     Show swarm health metrics powered by swarm-insights (strategy success rates, patterns)
@@ -4969,6 +4971,68 @@ async function serve() {
 }
 
 // ============================================================================
+// Viz Command - Start Dashboard Server
+// ============================================================================
+
+async function viz() {
+  p.intro("swarm viz v" + VERSION);
+
+  // Parse --port flag (default 4483 - HIVE on phone keypad)
+  const portFlagIndex = process.argv.indexOf("--port");
+  const port = portFlagIndex !== -1 
+    ? Number.parseInt(process.argv[portFlagIndex + 1]) || 4483
+    : 4483;
+
+  const projectPath = process.cwd();
+
+  p.log.step("Starting dashboard server...");
+  p.log.message(dim(`  Project: ${projectPath}`));
+  p.log.message(dim(`  Port: ${port}`));
+
+  try {
+    // Import dependencies
+    const { getSwarmMailLibSQL, createHiveAdapter } = await import("swarm-mail");
+    const { createDurableStreamAdapter, createDurableStreamServer } = await import("swarm-mail");
+
+    // Get swarm-mail adapter
+    const swarmMail = await getSwarmMailLibSQL(projectPath);
+    
+    // Create stream adapter
+    const streamAdapter = createDurableStreamAdapter(swarmMail, projectPath);
+    
+    // Create hive adapter for cells endpoint
+    const db = swarmMail.db;
+    const hiveAdapter = createHiveAdapter(db, projectPath);
+    
+    // Create and start server
+    const server = createDurableStreamServer({
+      adapter: streamAdapter,
+      hiveAdapter,
+      port,
+      projectKey: projectPath,
+    });
+
+    await server.start();
+
+    p.log.success("Dashboard server running!");
+    p.log.message("");
+    p.log.message(cyan(`  Dashboard: http://localhost:${port}`));
+    p.log.message(cyan(`  SSE endpoint: http://localhost:${port}/streams/${encodeURIComponent(projectPath)}`));
+    p.log.message(cyan(`  Cells API: http://localhost:${port}/cells`));
+    p.log.message("");
+    p.log.message(dim("  Press Ctrl+C to stop"));
+
+    // Keep process alive
+    await new Promise(() => {});
+  } catch (error) {
+    p.log.error("Failed to start dashboard server");
+    p.log.message(error instanceof Error ? error.message : String(error));
+    p.outro("Aborted");
+    process.exit(1);
+  }
+}
+
+// ============================================================================
 // Main
 // ============================================================================
 
@@ -4992,6 +5056,9 @@ switch (command) {
     break;
   case "serve":
     await serve();
+    break;
+  case "viz":
+    await viz();
     break;
   case "update":
     await update();

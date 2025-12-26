@@ -1079,3 +1079,129 @@ Errors logged with SwarmError.toJSON() include:
 - Full context object (file, line, agent, epic, events)
 
 This creates an audit trail from error → context → recent events → root cause.
+
+## CASS - Cross-Agent Session Search
+
+Search across ALL AI coding agent histories before solving problems from scratch. Another agent may have already solved it.
+
+**Inspired by [CASS (coding_agent_session_search)](https://github.com/Dicklesworthstone/coding_agent_session_search) by Dicklesworthstone** - adapted for TypeScript + libSQL with swarm-mail's session indexing layer.
+
+**Indexed agents:** Claude Code, Codex, Cursor, Gemini, Aider, ChatGPT, Cline, OpenCode, Amp, Pi-Agent
+
+### When to Use
+
+- **BEFORE implementing** - check if any agent solved it before
+- **Debugging** - "what did I try last time this error happened?"
+- **Learning patterns** - "how did Cursor handle this API?"
+- **Avoiding repetition** - query before reinventing wheels
+
+### Plugin Tools
+
+All `cass_*` tools are available in the opencode-swarm-plugin:
+
+**cass_search** - Search across all agent histories
+
+```typescript
+// Search with query
+cass_search({
+  query: "authentication error Next.js",
+  limit: 5
+})
+
+// Filter by agent
+cass_search({
+  query: "useEffect cleanup",
+  agent: "claude",
+  days: 7
+})
+
+// Compact output (path, line, agent only)
+cass_search({
+  query: "token refresh race condition",
+  fields: "minimal",
+  limit: 10
+})
+```
+
+**cass_view** - View specific session from search results
+
+```typescript
+// View session (uses source_path from search output)
+cass_view({
+  path: "/Users/joel/.config/opencode/sessions/2025-12-25.jsonl",
+  line: 42  // Optional: jump to specific line
+})
+```
+
+**cass_expand** - Expand context around a line
+
+```typescript
+// Get 5 lines before/after line 42
+cass_expand({
+  path: "/Users/joel/.config/opencode/sessions/2025-12-25.jsonl",
+  line: 42,
+  context: 5
+})
+```
+
+**cass_index** - Build/rebuild search index
+
+```typescript
+// Check health first
+cass_health()
+
+// Rebuild index if stale
+cass_index({ full: true })
+```
+
+**cass_health** - Check if index is ready
+
+```typescript
+// Returns exit 0 if ready, exit 1 if needs indexing
+cass_health()
+```
+
+**cass_stats** - Show index statistics
+
+```typescript
+// How many sessions/messages/agents indexed
+cass_stats()
+```
+
+### Usage Pattern
+
+```bash
+# 1. Check health (run if first time or index stale)
+cass_health()
+
+# 2. Search for relevant past solutions
+cass_search({ query: "OAuth token refresh buffer", limit: 5 })
+
+# 3. View promising results
+cass_view({ path: "<from_search_result>", line: 123 })
+
+# 4. Expand context if needed
+cass_expand({ path: "<from_search_result>", line: 123, context: 10 })
+```
+
+### Integration with Workflow
+
+**At task start:**
+```bash
+# Before implementing, query past solutions
+cass_search({ query: "<task description>", limit: 3 })
+```
+
+**During debugging:**
+```bash
+# Search for similar errors
+cass_search({ query: "<error message>", agent: "claude", days: 30 })
+```
+
+**Learning from others:**
+```bash
+# See how other agents handled it
+cass_search({ query: "Next.js caching searchParams", limit: 5 })
+```
+
+**Pro tip:** Query CASS at the START of complex tasks. Past solutions save time and prevent solving the same problem twice.
