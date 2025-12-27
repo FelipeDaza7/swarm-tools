@@ -356,7 +356,7 @@ describe("MemoryAdapter - Smart Upsert (Mem0 Pattern)", () => {
     expect(result.reason).toContain("already captured");
   });
 
-  test.skip("upsert() with refined information returns UPDATE (requires working LLM)", async () => {
+  test.skipIf(!hasWorkingLLM)("upsert() with refined information returns UPDATE (requires working LLM)", async () => {
     // Store initial memory
     const original = await adapter.store("OAuth tokens need refresh");
 
@@ -374,7 +374,7 @@ describe("MemoryAdapter - Smart Upsert (Mem0 Pattern)", () => {
     expect(updated?.content).toContain("5min");
   });
 
-  test.skip("upsert() with contradicting information returns DELETE (requires working LLM)", async () => {
+  test.skipIf(!hasWorkingLLM)("upsert() with contradicting information returns DELETE (requires working LLM)", async () => {
     // Store original claim with clear numeric value
     await adapter.store("OAuth tokens expire after 60 minutes");
 
@@ -727,7 +727,7 @@ describe("MemoryAdapter - Enhanced Store with Auto Features", () => {
     client.close();
   });
 
-  test.skip("store() with autoTag extracts tags from content (requires working LLM)", async () => {
+  test.skipIf(!hasWorkingLLM)("store() with autoTag extracts tags from content (requires working LLM)", async () => {
     const result = await adapter.store(
       "OAuth tokens need refresh buffer to avoid race conditions",
       { autoTag: true }

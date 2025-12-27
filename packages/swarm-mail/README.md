@@ -39,7 +39,7 @@ A TypeScript library providing:
 1. **Event Store** - Append-only log with automatic projection updates (agents, messages, file reservations)
 2. **Actor Primitives** - DurableMailbox, DurableLock, DurableCursor, DurableDeferred (Effect-TS based)
 3. **Hive** - Git-synced work item tracker (cells, epics, dependencies)
-4. **Semantic Memory** - Vector embeddings for persistent agent learnings (Ollama + pgvector)
+4. **Semantic Memory** - Vector embeddings for persistent agent learnings (Ollama + libSQL vector extension)
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
@@ -58,7 +58,7 @@ A TypeScript library providing:
 │  └── DurableDeferred - Distributed promise                 │
 │                                                             │
 │  MEMORY                                                     │
-│  └── Semantic Memory - Vector embeddings (pgvector/Ollama) │
+│  └── Semantic Memory - Vector embeddings (libSQL vec/Ollama) │
 │                                                             │
 │  STORAGE                                                    │
 │  └── libSQL (Embedded SQLite via Drizzle ORM)              │
@@ -250,17 +250,56 @@ await hive.closeCell(cell.id, "Completed: OAuth implemented");
 
 ### Semantic Memory
 
-Vector embeddings for persistent agent learnings:
+Vector embeddings for persistent agent learnings with **Wave 1-3 smart operations**:
 
 ```typescript
 import { createSemanticMemory } from "swarm-mail";
 
 const memory = await createSemanticMemory("/my/project");
 
-// Store a learning
+// Basic store (always adds new memory)
 const { id } = await memory.store(
   "OAuth refresh tokens need 5min buffer before expiry to avoid race conditions",
   { tags: "auth,tokens,debugging" }
+);
+
+// Smart upsert (Mem0 pattern) - LLM decides ADD/UPDATE/DELETE/NOOP
+const result = await memory.upsert(
+  "OAuth tokens need 5min buffer (changed from 3min)",
+  { useSmartOps: true }
+);
+console.log(result.operation); // "UPDATE" - refines existing memory
+console.log(result.reason);    // "Refines existing memory with additional detail"
+
+// Auto-tagging - LLM extracts tags from content
+const { id, autoTags } = await memory.store(
+  "OAuth tokens need 5min buffer before expiry",
+  { autoTag: true }
+);
+console.log(autoTags); // { tags: ["auth", "oauth", "tokens"], confidence: 0.85 }
+
+// Auto-linking - semantic similarity finds related memories
+const { id, links } = await memory.store(
+  "Token refresh race condition fixed in auth service",
+  { autoLink: true }
+);
+console.log(links); // [{ memory_id: "mem-abc123", link_type: "related" }]
+
+// Entity extraction - build knowledge graph automatically
+const { id } = await memory.store(
+  "Joel prefers TypeScript for Next.js projects",
+  { extractEntities: true }
+);
+// Extracts: entities["Joel", "TypeScript", "Next.js"], relationship["Joel", "prefers", "TypeScript"]
+
+// Combine all smart features
+const result = await memory.store(
+  "OAuth tokens need 5min buffer before expiry",
+  { 
+    autoTag: true, 
+    autoLink: true, 
+    extractEntities: true 
+  }
 );
 
 // Search by meaning (vector similarity)
@@ -277,7 +316,97 @@ const health = await memory.checkHealth();
 // { ollama: true, model: "mxbai-embed-large" }
 ```
 
-> **Note:** Requires [Ollama](https://ollama.ai/) for vector embeddings. Falls back to full-text search if unavailable.
+#### Wave 1-3 Smart Operations
+
+**Smart Upsert (Mem0 Pattern)**
+
+LLM analyzes new information against existing memories to decide operation:
+
+```typescript
+// LLM decides: ADD (new), UPDATE (refines), DELETE (contradicts), or NOOP (duplicate)
+const result = await memory.upsert("New information", { useSmartOps: true });
+console.log(result.operation); // "ADD" | "UPDATE" | "DELETE" | "NOOP"
+console.log(result.reason);    // Human-readable explanation
+console.log(result.id);        // Memory ID (existing for UPDATE/DELETE/NOOP, new for ADD)
+```
+
+**Auto-Tagging**
+
+LLM extracts relevant tags from content:
+
+```typescript
+const { autoTags } = await memory.store("Content here", { autoTag: true });
+// { tags: ["extracted", "tags"], confidence: 0.8 }
+```
+
+**Memory Linking (Zettelkasten)**
+
+Auto-link to semantically related memories:
+
+```typescript
+const { links } = await memory.store("Content", { autoLink: true });
+// [{ memory_id: "mem-xyz", link_type: "related" }]
+
+// Query linked memories
+const linked = await memory.getLinkedMemories("mem-abc123", "related");
+```
+
+**Entity Extraction (A-MEM Pattern)**
+
+Build knowledge graph from natural language:
+
+```typescript
+await memory.store("Joel prefers TypeScript", { extractEntities: true });
+
+// Query by entity
+const joelMemories = await memory.findByEntity("Joel", "person");
+
+// Get knowledge graph
+const graph = await memory.getKnowledgeGraph("mem-abc123");
+// { entities: [...], relationships: [...] }
+```
+
+**Temporal Queries**
+
+Query memories valid at specific timestamps:
+
+```typescript
+// Find memories valid on January 1, 2024
+const pastMemories = await memory.findValidAt(
+  "authentication",
+  new Date("2024-01-01")
+);
+
+// Track supersession chains (version history)
+const chain = await memory.getSupersessionChain("mem-v1");
+// Returns: [v1, v2, v3] (chronological)
+
+// Mark memory as superseded
+await memory.supersede("old-id", "new-id");
+```
+
+#### Graceful Degradation
+
+All smart operations use **fallback heuristics** if LLM unavailable:
+
+- **Smart ops**: Falls back to simple ADD operation
+- **Auto-tagging**: Returns undefined (no auto-tags added)
+- **Auto-linking**: Returns undefined (no links created)
+- **Entity extraction**: Returns empty entities/relationships
+- **Vector search**: Falls back to full-text search (FTS5)
+
+No crashes, no exceptions - degraded functionality, not broken functionality.
+
+#### ID Prefix Convention
+
+Memory IDs use `mem-` prefix (not `mem_`):
+
+```typescript
+const { id } = await memory.store("Content");
+console.log(id); // "mem-abc123def456" (16 hex chars after prefix)
+```
+
+> **Note:** Requires [Ollama](https://ollama.ai/) for vector embeddings and smart operations. Falls back to full-text search if unavailable.
 >
 > ```bash
 > ollama pull mxbai-embed-large
@@ -989,7 +1118,7 @@ Cross-agent session search and indexing layer for multi-agent conversation histo
 │  │ libSQL Storage (via semantic-memory)     │               │
 │  │  ├─ memories table (vector search)       │               │
 │  │  ├─ metadata (agent, session, timestamp) │               │
-│  │  └─ pgvector similarity search           │               │
+│  │  └─ libSQL vec extension similarity      │               │
 │  └──────────────┬───────────────────────────┘               │
 │                 │                                           │
 │                 ▼                                           │

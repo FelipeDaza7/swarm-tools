@@ -49,6 +49,7 @@
     "eval:decomposition": "bun --env-file=.env run bunx evalite run evals/swarm-decomposition.eval.ts",
     "eval:coordinator": "bun --env-file=.env run bunx evalite run evals/coordinator-session.eval.ts",
     "eval:compaction": "bun --env-file=.env run bunx evalite run evals/compaction-prompt.eval.ts",
+    "eval:smart-operations": "bun --env-file=.env run bunx evalite run evals/smart-operations.eval.ts",
     "eval:gate": "bun run bin/eval-gate.ts",
     "migrate:sessions": "bun run scripts/migrate-unknown-sessions.ts",
     "postinstall": "node -e \"console.log('\\n\\x1b[33m  Run \\x1b[36mswarm setup\\x1b[33m to configure OpenCode integration\\x1b[0m\\n')\""
