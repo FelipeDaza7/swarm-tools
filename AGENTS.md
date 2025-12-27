@@ -527,6 +527,26 @@ Add the quote as an epigraph. Makes changelogs memorable and connects our work t
 - Event sourcing? Search "event sourcing CQRS"
 - Testing? Search "Beck TDD red green"
 
+**ASCII Art Guidelines:**
+- ASCII art is NOT always box-drawing block diagrams
+- Be creative: animals, objects, scenes, characters with speech bubbles
+- Match the metaphor: bees for swarm, telescopes for observability, locks for auth
+- Hand-drawn feel > corporate flowchart
+- Surprise and delight > functional documentation
+
+```
+# GOOD: Creative, thematic, memorable
+                    .-.
+                   (o o)  "Should I ADD or UPDATE?"
+                   | O |
+                    '-'
+
+# BAD: Generic box diagram (every time)
+┌─────────────────────────┐
+│  SOME FEATURE           │
+└─────────────────────────┘
+```
+
 ### Ignored Packages
 
 The following packages are excluded from changesets (won't be published):
