@@ -21,6 +21,7 @@ import {
   type DecompositionStrategy,
 } from "./swarm-strategies";
 import { captureCoordinatorEvent } from "./eval-capture.js";
+import { traceStrategySelection } from "./decision-trace-integration.js";
 
 // ============================================================================
 // Decomposition Prompt (temporary - will be moved to swarm-prompts.ts)
@@ -774,7 +775,7 @@ export const swarm_delegate_planning = tool({
       strategyReasoning = selection.reasoning;
     }
 
-    // Capture strategy selection decision
+    // Capture strategy selection decision (legacy eval capture)
     try {
       captureCoordinatorEvent({
         session_id: _ctx.sessionID || "unknown",
@@ -821,6 +822,33 @@ export const swarm_delegate_planning = tool({
       }
     } else {
       cassResultInfo = { queried: false, reason: "disabled" };
+    }
+
+    // Capture decision trace (new context graph architecture)
+    // Must be after CASS query so we have cassResultInfo
+    try {
+      await traceStrategySelection({
+        projectKey: args.context?.includes("/") ? args.context.split(" ")[0] : process.cwd(),
+        agentName: "coordinator",
+        epicId: undefined, // No epic ID yet - this is pre-decomposition
+        strategy: selectedStrategy,
+        reasoning: strategyReasoning,
+        confidence: undefined, // Could be added from selectStrategy result
+        taskPreview: args.task.slice(0, 200),
+        inputsGathered: cassResultInfo.queried
+          ? [
+              {
+                source: "cass",
+                query: args.task,
+                results: cassResultInfo.results_found ?? 0,
+              },
+            ]
+          : undefined,
+        alternatives: undefined, // Could be added from selectStrategy result
+      });
+    } catch (error) {
+      // Non-fatal - don't block planning if trace fails
+      console.warn("[swarm_delegate_planning] Failed to trace strategy_selection:", error);
     }
 
     // Fetch skills context

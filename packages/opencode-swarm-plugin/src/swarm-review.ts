@@ -19,6 +19,7 @@ import { z } from "zod";
 import { sendSwarmMessage, type HiveAdapter } from "swarm-mail";
 import { getHiveAdapter } from "./hive";
 import { captureCoordinatorEvent } from "./eval-capture.js";
+import { traceReviewDecision } from "./decision-trace-integration.js";
 
 // ============================================================================
 // Types & Schemas
@@ -525,7 +526,7 @@ export const swarm_review_feedback = tool({
       // Mark as approved and clear attempts
       markReviewApproved(args.task_id);
 
-      // Capture review approval decision
+      // Capture review approval decision (legacy eval capture)
       try {
         captureCoordinatorEvent({
           session_id: _ctx.sessionID || "unknown",
@@ -542,6 +543,25 @@ export const swarm_review_feedback = tool({
       } catch (error) {
         // Non-fatal - don't block approval if capture fails
         console.warn("[swarm_review_feedback] Failed to capture review_completed:", error);
+      }
+
+      // Capture decision trace (new context graph architecture)
+      try {
+        await traceReviewDecision({
+          projectKey: args.project_key,
+          agentName: "coordinator",
+          epicId: epicId,
+          beadId: args.task_id,
+          workerId: args.worker_id,
+          status: "approved",
+          summary: args.summary,
+          attemptNumber: 1,
+          remainingAttempts: MAX_REVIEW_ATTEMPTS,
+          rationale: args.summary || "Review approved",
+        });
+      } catch (error) {
+        // Non-fatal - don't block approval if trace fails
+        console.warn("[swarm_review_feedback] Failed to trace review_decision:", error);
       }
 
       // Emit ReviewCompletedEvent for lifecycle tracking
@@ -592,7 +612,7 @@ You may now complete the task with \`swarm_complete\`.`,
     const attemptNumber = incrementAttempt(args.task_id);
     const remaining = MAX_REVIEW_ATTEMPTS - attemptNumber;
 
-    // Capture review rejection decision
+    // Capture review rejection decision (legacy eval capture)
     try {
       captureCoordinatorEvent({
         session_id: _ctx.sessionID || "unknown",
@@ -611,6 +631,26 @@ You may now complete the task with \`swarm_complete\`.`,
     } catch (error) {
       // Non-fatal - don't block feedback if capture fails
       console.warn("[swarm_review_feedback] Failed to capture review_completed:", error);
+    }
+
+    // Capture decision trace (new context graph architecture)
+    try {
+      await traceReviewDecision({
+        projectKey: args.project_key,
+        agentName: "coordinator",
+        epicId: epicId,
+        beadId: args.task_id,
+        workerId: args.worker_id,
+        status: "needs_changes",
+        summary: args.summary,
+        issues: parsedIssues,
+        attemptNumber,
+        remainingAttempts: remaining,
+        rationale: args.summary || `Review rejected: ${parsedIssues.length} issue(s) found`,
+      });
+    } catch (error) {
+      // Non-fatal - don't block feedback if trace fails
+      console.warn("[swarm_review_feedback] Failed to trace review_decision:", error);
     }
 
     // Emit ReviewCompletedEvent for lifecycle tracking

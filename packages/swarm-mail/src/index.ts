@@ -129,6 +129,22 @@ export {
 	sendSwarmMessage,
 } from "./streams/swarm-mail";
 
+// Decision trace store for observability
+export {
+	createDecisionTrace,
+	getDecisionTracesByAgent,
+	getDecisionTracesByEpic,
+	getDecisionTracesByType,
+	linkOutcomeToTrace,
+} from "./streams/decision-trace-store";
+export type {
+	DecisionTrace,
+	DecisionTraceInput,
+} from "./streams/decision-trace-store";
+
+// Database path utilities
+export { getDatabasePath } from "./streams/index";
+
 // ============================================================================
 // Durable Streams (real-time event streaming via SSE)
 // ============================================================================

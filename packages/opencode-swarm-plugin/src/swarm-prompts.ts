@@ -16,6 +16,7 @@ import { tool } from "@opencode-ai/plugin";
 import { generateWorkerHandoff } from "./swarm-orchestrate";
 import { captureCoordinatorEvent } from "./eval-capture.js";
 import { getMemoryAdapter } from "./memory-tools.js";
+import { traceWorkerSpawn } from "./decision-trace-integration.js";
 
 // ============================================================================
 // Prompt Templates
@@ -1635,7 +1636,7 @@ export const swarm_spawn_subtask = tool({
       .replace(/{files_touched}/g, filesJoined)
       .replace(/{worker_id}/g, "worker");  // Will be filled by actual worker name
 
-    // Capture worker spawn decision
+    // Capture worker spawn decision (legacy eval capture)
     try {
       captureCoordinatorEvent({
         session_id: _ctx.sessionID || "unknown",
@@ -1652,6 +1653,26 @@ export const swarm_spawn_subtask = tool({
     } catch (error) {
       // Non-fatal - don't block spawn if capture fails
       console.warn("[swarm_spawn_subtask] Failed to capture worker_spawned:", error);
+    }
+
+    // Capture decision trace (new context graph architecture)
+    try {
+      await traceWorkerSpawn({
+        projectKey: args.project_path || process.cwd(),
+        agentName: "coordinator",
+        epicId: args.epic_id,
+        beadId: args.bead_id,
+        workerName: "worker", // Will be set at swarmmail_init
+        subtaskTitle: args.subtask_title,
+        files: args.files,
+        model: selectedModel,
+        spawnOrder: 0, // TODO: Query existing worker_spawned events for this epic
+        isParallel: false, // TODO: Detect from coordinator strategy
+        rationale: args.subtask_description || `Spawning worker for: ${args.subtask_title}`,
+      });
+    } catch (error) {
+      // Non-fatal - don't block spawn if trace fails
+      console.warn("[swarm_spawn_subtask] Failed to trace worker_spawn:", error);
     }
 
     // Emit WorkerSpawnedEvent for lifecycle tracking
