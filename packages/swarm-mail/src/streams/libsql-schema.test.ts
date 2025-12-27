@@ -47,6 +47,7 @@ describe("libSQL streams schema", () => {
       expect(tableNames).toContain("cursors");
       expect(tableNames).toContain("eval_records");
       expect(tableNames).toContain("swarm_contexts");
+      expect(tableNames).toContain("decision_traces");
     });
 
     test("creates indexes", async () => {
@@ -67,6 +68,12 @@ describe("libSQL streams schema", () => {
       // Messages indexes
       expect(indexNames).toContain("idx_messages_project");
       expect(indexNames).toContain("idx_messages_thread");
+      
+      // Decision traces indexes
+      expect(indexNames).toContain("idx_decision_traces_epic");
+      expect(indexNames).toContain("idx_decision_traces_type");
+      expect(indexNames).toContain("idx_decision_traces_agent");
+      expect(indexNames).toContain("idx_decision_traces_timestamp");
     });
 
     test("events table has correct columns", async () => {
@@ -266,6 +273,141 @@ describe("libSQL streams schema", () => {
         bead_id: "bead-456",
       });
     });
+
+    test("decision_traces table can store decision trace data", async () => {
+      await createLibSQLStreamsSchema(db);
+
+      const now = Date.now();
+      const trace = {
+        id: "dt-abc123",
+        decision_type: "strategy_selection",
+        epic_id: "epic-123",
+        bead_id: "bead-456",
+        agent_name: "coordinator",
+        project_key: "/path/to/project",
+        decision: JSON.stringify({ strategy: "file-based", confidence: 0.85 }),
+        rationale: "File-based chosen due to clear file boundaries",
+        inputs_gathered: JSON.stringify([
+          { source: "cass", query: "similar tasks", results: 3 },
+          { source: "hive", query: "open cells", results: 5 }
+        ]),
+        policy_evaluated: JSON.stringify({
+          rule: "prefer file-based for <5 files",
+          matched: true
+        }),
+        alternatives: JSON.stringify([
+          { strategy: "feature-based", reason: "rejected: too many cross-cutting concerns" }
+        ]),
+        precedent_cited: JSON.stringify({
+          memory_id: "mem-xyz",
+          similarity: 0.92
+        }),
+        timestamp: now,
+      };
+
+      // Insert decision trace
+      await db.query(
+        `INSERT INTO decision_traces (id, decision_type, epic_id, bead_id, agent_name, project_key, decision, rationale, inputs_gathered, policy_evaluated, alternatives, precedent_cited, timestamp)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [
+          trace.id,
+          trace.decision_type,
+          trace.epic_id,
+          trace.bead_id,
+          trace.agent_name,
+          trace.project_key,
+          trace.decision,
+          trace.rationale,
+          trace.inputs_gathered,
+          trace.policy_evaluated,
+          trace.alternatives,
+          trace.precedent_cited,
+          trace.timestamp,
+        ]
+      );
+
+      // Query it back
+      const result = await db.query<{
+        id: string;
+        decision_type: string;
+        agent_name: string;
+        rationale: string;
+      }>(
+        `SELECT id, decision_type, agent_name, rationale FROM decision_traces WHERE id = ?`,
+        [trace.id]
+      );
+
+      expect(result.rows).toHaveLength(1);
+      expect(result.rows[0]).toMatchObject({
+        id: "dt-abc123",
+        decision_type: "strategy_selection",
+        agent_name: "coordinator",
+        rationale: "File-based chosen due to clear file boundaries",
+      });
+    });
+
+    test("decision_traces table has correct columns", async () => {
+      await createLibSQLStreamsSchema(db);
+
+      const columns = await db.query<{ name: string; type: string }>(`
+        PRAGMA table_info('decision_traces')
+      `);
+
+      const columnMap = Object.fromEntries(
+        columns.rows.map((r) => [r.name, r.type])
+      );
+
+      expect(columnMap).toMatchObject({
+        id: "TEXT",
+        decision_type: "TEXT",
+        epic_id: "TEXT",
+        bead_id: "TEXT",
+        agent_name: "TEXT",
+        project_key: "TEXT",
+        decision: "TEXT",
+        rationale: "TEXT",
+        inputs_gathered: "TEXT",
+        policy_evaluated: "TEXT",
+        alternatives: "TEXT",
+        precedent_cited: "TEXT",
+        outcome_event_id: "INTEGER",
+        timestamp: "INTEGER",
+        created_at: "TEXT",
+      });
+    });
+
+    test("decision_traces can query by epic_id", async () => {
+      await createLibSQLStreamsSchema(db);
+
+      const now = Date.now();
+      
+      // Insert multiple traces for same epic
+      for (let i = 0; i < 3; i++) {
+        await db.query(
+          `INSERT INTO decision_traces (id, decision_type, agent_name, project_key, decision, timestamp, epic_id)
+           VALUES (?, ?, ?, ?, ?, ?, ?)`,
+          [
+            `dt-${i}`,
+            i === 0 ? "strategy_selection" : "worker_spawn",
+            "coordinator",
+            "/project",
+            JSON.stringify({ step: i }),
+            now + i * 1000,
+            "epic-shared",
+          ]
+        );
+      }
+
+      // Query by epic
+      const result = await db.query<{ id: string; decision_type: string }>(
+        `SELECT id, decision_type FROM decision_traces WHERE epic_id = ? ORDER BY timestamp`,
+        ["epic-shared"]
+      );
+
+      expect(result.rows).toHaveLength(3);
+      expect(result.rows[0].decision_type).toBe("strategy_selection");
+      expect(result.rows[1].decision_type).toBe("worker_spawn");
+    });
   });
 
   describe("dropLibSQLStreamsSchema", () => {
@@ -275,7 +417,7 @@ describe("libSQL streams schema", () => {
 
       const tables = await db.query<{ name: string }>(`
         SELECT name FROM sqlite_master 
-        WHERE type='table' AND name IN ('events', 'agents', 'messages', 'reservations', 'locks', 'cursors', 'eval_records', 'swarm_contexts')
+        WHERE type='table' AND name IN ('events', 'agents', 'messages', 'reservations', 'locks', 'cursors', 'eval_records', 'swarm_contexts', 'decision_traces')
       `);
 
       expect(tables.rows).toHaveLength(0);

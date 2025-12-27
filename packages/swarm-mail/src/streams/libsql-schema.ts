@@ -41,6 +41,7 @@ import type { DatabaseAdapter } from "../types/database.js";
  * - cursors (stream positions)
  * - eval_records (decomposition eval tracking)
  * - swarm_contexts (swarm checkpoint tracking)
+ * - decision_traces (decision trace log)
  *
  * Idempotent - safe to call multiple times.
  *
@@ -335,6 +336,50 @@ export async function createLibSQLStreamsSchema(db: DatabaseAdapter): Promise<vo
       updated_at INTEGER NOT NULL
     )
   `);
+
+  // ========================================================================
+  // Decision Traces Table (decision trace log)
+  // ========================================================================
+  // IMPORTANT: This table structure MUST match db/schema/streams.ts (decisionTracesTable)
+  await db.exec(`
+    CREATE TABLE IF NOT EXISTS decision_traces (
+      id TEXT PRIMARY KEY,
+      decision_type TEXT NOT NULL,
+      epic_id TEXT,
+      bead_id TEXT,
+      agent_name TEXT NOT NULL,
+      project_key TEXT NOT NULL,
+      decision TEXT NOT NULL,
+      rationale TEXT,
+      inputs_gathered TEXT,
+      policy_evaluated TEXT,
+      alternatives TEXT,
+      precedent_cited TEXT,
+      outcome_event_id INTEGER,
+      timestamp INTEGER NOT NULL,
+      created_at TEXT DEFAULT (datetime('now'))
+    )
+  `);
+
+  await db.exec(`
+    CREATE INDEX IF NOT EXISTS idx_decision_traces_epic 
+    ON decision_traces(epic_id)
+  `);
+
+  await db.exec(`
+    CREATE INDEX IF NOT EXISTS idx_decision_traces_type 
+    ON decision_traces(decision_type)
+  `);
+
+  await db.exec(`
+    CREATE INDEX IF NOT EXISTS idx_decision_traces_agent 
+    ON decision_traces(agent_name)
+  `);
+
+  await db.exec(`
+    CREATE INDEX IF NOT EXISTS idx_decision_traces_timestamp 
+    ON decision_traces(timestamp)
+  `);
 }
 
 /**
@@ -347,6 +392,7 @@ export async function createLibSQLStreamsSchema(db: DatabaseAdapter): Promise<vo
  */
 export async function dropLibSQLStreamsSchema(db: DatabaseAdapter): Promise<void> {
   // Drop in reverse dependency order
+  await db.exec("DROP TABLE IF EXISTS decision_traces");
   await db.exec("DROP TABLE IF EXISTS swarm_contexts");
   await db.exec("DROP TABLE IF EXISTS eval_records");
   await db.exec("DROP TABLE IF EXISTS cursors");
@@ -374,10 +420,10 @@ export async function validateLibSQLStreamsSchema(db: DatabaseAdapter): Promise<
     // Check all required tables exist
     const tables = await db.query(`
       SELECT name FROM sqlite_master 
-      WHERE type='table' AND name IN ('events', 'agents', 'messages', 'message_recipients', 'reservations', 'locks', 'cursors', 'eval_records', 'swarm_contexts')
+      WHERE type='table' AND name IN ('events', 'agents', 'messages', 'message_recipients', 'reservations', 'locks', 'cursors', 'eval_records', 'swarm_contexts', 'decision_traces')
     `);
 
-    if (tables.rows.length !== 9) return false;
+    if (tables.rows.length !== 10) return false;
 
     // Check events table has required columns
     // Use table_xinfo to include generated columns (like sequence)

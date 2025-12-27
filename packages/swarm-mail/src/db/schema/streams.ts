@@ -240,3 +240,40 @@ export const swarmContextsTable = sqliteTable("swarm_contexts", {
   recovered_from_checkpoint: integer("recovered_from_checkpoint"),
   updated_at: integer("updated_at").notNull(),
 });
+
+/**
+ * Decision Traces table - decision trace log.
+ *
+ * Captures coordinator and worker decision-making process for analysis.
+ * Enables understanding of how agents arrive at task decompositions,
+ * strategy selections, and coordination decisions.
+ */
+export const decisionTracesTable = sqliteTable(
+  "decision_traces",
+  {
+    id: text("id").primaryKey(), // dt-{nanoid}
+    decision_type: text("decision_type").notNull(),
+    epic_id: text("epic_id"),
+    bead_id: text("bead_id"),
+    agent_name: text("agent_name").notNull(),
+    project_key: text("project_key").notNull(),
+    decision: text("decision").notNull(), // JSON
+    rationale: text("rationale"),
+    inputs_gathered: text("inputs_gathered"), // JSON
+    policy_evaluated: text("policy_evaluated"), // JSON
+    alternatives: text("alternatives"), // JSON
+    precedent_cited: text("precedent_cited"), // JSON
+    outcome_event_id: integer("outcome_event_id"),
+    timestamp: integer("timestamp").notNull(),
+    created_at: text("created_at").default("(datetime('now'))"),
+  },
+  (table) => ({
+    epicIdx: index("idx_decision_traces_epic").on(table.epic_id),
+    typeIdx: index("idx_decision_traces_type").on(table.decision_type),
+    agentIdx: index("idx_decision_traces_agent").on(table.agent_name),
+    timestampIdx: index("idx_decision_traces_timestamp").on(table.timestamp),
+  }),
+);
+
+export type DecisionTrace = typeof decisionTracesTable.$inferSelect;
+export type NewDecisionTrace = typeof decisionTracesTable.$inferInsert;

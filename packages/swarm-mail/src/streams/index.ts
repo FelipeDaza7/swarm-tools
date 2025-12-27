@@ -170,3 +170,6 @@ export {
 
 // Legacy exports for backward compatibility (still used by some high-level functions)
 export * from "./swarm-mail";
+
+// Decision trace store for observability
+export * from "./decision-trace-store";
