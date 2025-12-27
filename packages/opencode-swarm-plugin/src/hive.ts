@@ -24,6 +24,7 @@ import {
   type Cell as AdapterCell,
   getSwarmMailLibSQL,
   resolvePartialId,
+  findCellsByPartialId,
 } from "swarm-mail";
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
@@ -1313,15 +1314,14 @@ PREFER THIS OVER hive_query when you need to:
     const adapter = await getHiveAdapter(projectKey);
     
     try {
-      // If specific ID requested, resolve and return single cell
+      // If specific ID requested, find all matching cells (supports partial IDs)
       if (args.id) {
-        const fullId = await resolvePartialId(adapter, projectKey, args.id) || args.id;
-        const cell = await adapter.getCell(projectKey, fullId);
-        if (!cell) {
+        const matchingCells = await findCellsByPartialId(adapter, projectKey, args.id);
+        if (matchingCells.length === 0) {
           throw new HiveError(`No cell found matching ID '${args.id}'`, "hive_cells");
         }
-        const formatted = formatCellForOutput(cell);
-        return JSON.stringify([formatted], null, 2);
+        const formatted = matchingCells.map(c => formatCellForOutput(c));
+        return JSON.stringify(formatted, null, 2);
       }
       
       // If ready flag, return next unblocked cell
@@ -1345,15 +1345,14 @@ PREFER THIS OVER hive_query when you need to:
       const formatted = cells.map(c => formatCellForOutput(c));
       return JSON.stringify(formatted, null, 2);
     } catch (error) {
+      // Re-throw HiveErrors as-is
+      if (error instanceof HiveError) {
+        throw error;
+      }
+      
       const message = error instanceof Error ? error.message : String(error);
       
       // Provide helpful error messages
-      if (message.includes("Ambiguous hash")) {
-        throw new HiveError(
-          `Ambiguous ID '${args.id}': multiple cells match. Please provide more characters.`,
-          "hive_cells",
-        );
-      }
       if (message.includes("Bead not found") || message.includes("Cell not found")) {
         throw new HiveError(
           `No cell found matching ID '${args.id || "unknown"}'`,

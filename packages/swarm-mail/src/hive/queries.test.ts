@@ -691,6 +691,77 @@ describe("beads/queries", () => {
     });
   });
 
+  describe("findCellsByPartialId", () => {
+    test("returns all matching cells instead of throwing on ambiguous", async () => {
+      // Create two cells with same project key (same hash segment)
+      const cell1 = await beads.createCell(projectKey, {
+        title: "Task 1",
+        type: "task",
+        priority: 2,
+      });
+      const cell2 = await beads.createCell(projectKey, {
+        title: "Task 2",
+        type: "task",
+        priority: 2,
+      });
+
+      // Both cells share the same hash segment (derived from projectKey)
+      const parts1 = cell1.id.split("-");
+      const hash = parts1[1]; // e.g., "lf2p4u"
+
+      const { findCellsByPartialId } = await import("./queries.js");
+      const results = await findCellsByPartialId(beads, projectKey, hash);
+
+      // Should return both cells, not throw
+      expect(results.length).toBeGreaterThanOrEqual(2);
+      expect(results.some(c => c.id === cell1.id)).toBe(true);
+      expect(results.some(c => c.id === cell2.id)).toBe(true);
+    });
+
+    test("returns empty array when no matches", async () => {
+      const { findCellsByPartialId } = await import("./queries.js");
+      const results = await findCellsByPartialId(beads, projectKey, "nonexistent999");
+
+      expect(results).toEqual([]);
+    });
+
+    test("returns single cell when unique match", async () => {
+      const cell = await beads.createCell(projectKey, {
+        title: "Unique task",
+        type: "task",
+        priority: 2,
+      });
+
+      // Use the full timestamp+random segment which should be unique
+      const parts = cell.id.split("-");
+      const timestampRandom = parts[parts.length - 1];
+
+      const { findCellsByPartialId } = await import("./queries.js");
+      const results = await findCellsByPartialId(beads, projectKey, timestampRandom);
+
+      expect(results.length).toBe(1);
+      expect(results[0].id).toBe(cell.id);
+    });
+
+    test("ignores deleted cells", async () => {
+      const cell = await beads.createCell(projectKey, {
+        title: "To be deleted",
+        type: "task",
+        priority: 2,
+      });
+
+      const parts = cell.id.split("-");
+      const timestampRandom = parts[parts.length - 1];
+
+      await beads.deleteCell(projectKey, cell.id);
+
+      const { findCellsByPartialId } = await import("./queries.js");
+      const results = await findCellsByPartialId(beads, projectKey, timestampRandom);
+
+      expect(results).toEqual([]);
+    });
+  });
+
   describe("getStatistics", () => {
     test("returns zeros for empty database", async () => {
       const stats = await getStatistics(beads, projectKey);

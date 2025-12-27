@@ -1962,7 +1962,7 @@ describe("beads integration", () => {
       }
     });
 
-    it("looks up cell by partial ID", async () => {
+    it("looks up cells by partial ID (returns all matches)", async () => {
       const { hive_cells } = await import("./hive");
       
       // Extract hash from full ID (6-char segment before the last hyphen)
@@ -1974,22 +1974,13 @@ describe("beads integration", () => {
       // Use last 6 chars of hash (or full hash if short)
       const shortHash = hash.substring(Math.max(0, hash.length - 6));
 
-      try {
-        const result = await hive_cells.execute({ id: shortHash }, mockContext);
-        const cells = parseResponse<Cell[]>(result);
+      const result = await hive_cells.execute({ id: shortHash }, mockContext);
+      const cells = parseResponse<Cell[]>(result);
 
-        // Should return exactly one cell matching the ID
-        expect(cells).toHaveLength(1);
-        expect(cells[0].id).toBe(testCellId);
-      } catch (error) {
-        // If ambiguous, verify error message is helpful
-        if (error instanceof Error && error.message.includes("Ambiguous")) {
-          expect(error.message).toMatch(/ambiguous.*multiple/i);
-          expect(error.message).toContain(shortHash);
-        } else {
-          throw error;
-        }
-      }
+      // Should return all cells matching the partial ID (may be multiple)
+      expect(cells.length).toBeGreaterThanOrEqual(1);
+      // Our test cell should be in the results
+      expect(cells.some(c => c.id === testCellId)).toBe(true);
     });
 
     it("looks up cell by full ID", async () => {

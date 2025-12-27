@@ -170,6 +170,7 @@ export {
 // Query utilities
 export {
   resolvePartialId,
+  findCellsByPartialId,
   getReadyWork,
   getBlockedIssues,
   getEpicsEligibleForClosure,

@@ -35,6 +35,60 @@ function getHiveDrizzle(db: DatabaseAdapter) {
 }
 
 /**
+ * Find all cells matching a partial ID (Drizzle implementation)
+ * 
+ * Unlike resolvePartialIdDrizzle, this returns ALL matches instead of throwing
+ * on ambiguous results. Use this for query/search operations where multiple
+ * matches are valid.
+ * 
+ * @param adapter - HiveAdapter instance
+ * @param projectKey - Project key to filter cells
+ * @param partialId - Full or partial ID to match
+ * @returns Array of matching cells (may be empty)
+ */
+export async function findCellsByPartialIdDrizzle(
+  adapter: HiveAdapter,
+  projectKey: string,
+  partialId: string,
+): Promise<Cell[]> {
+  const db = getHiveDrizzle(await adapter.getDatabase());
+
+  // Use LIKE to match ANY substring of the cell ID
+  const pattern = `%${partialId}%`;
+  
+  const results = await db
+    .select()
+    .from(beads)
+    .where(
+      and(
+        eq(beads.project_key, projectKey),
+        isNull(beads.deleted_at),
+        like(beads.id, pattern)
+      )
+    );
+
+  return results.map(row => ({
+    id: row.id,
+    project_key: row.project_key,
+    type: row.type as Cell["type"],
+    status: row.status as Cell["status"],
+    title: row.title,
+    description: row.description,
+    priority: row.priority,
+    parent_id: row.parent_id,
+    assignee: row.assignee,
+    created_at: row.created_at,
+    updated_at: row.updated_at,
+    closed_at: row.closed_at,
+    closed_reason: row.closed_reason,
+    deleted_at: row.deleted_at,
+    deleted_by: row.deleted_by,
+    delete_reason: row.delete_reason,
+    created_by: row.created_by,
+  }));
+}
+
+/**
  * Resolve partial cell ID hash to full cell ID (Drizzle implementation)
  * 
  * Cell ID format: {prefix}-{hash}-{timestamp}{random}

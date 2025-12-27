@@ -25,6 +25,7 @@
 import type { DatabaseAdapter } from "../types/database.js";
 import type { Cell, CellStatus, HiveAdapter } from "../types/hive-adapter.js";
 import {
+  findCellsByPartialIdDrizzle,
   getCountsByTypeDrizzle,
   getStaleIssuesDrizzle,
   getStatusCountsDrizzle,
@@ -331,6 +332,31 @@ export async function resolvePartialId(
   partialHash: string,
 ): Promise<string | null> {
   return resolvePartialIdDrizzle(adapter, projectKey, partialHash);
+}
+
+/**
+ * Find all cells matching a partial ID
+ * 
+ * Unlike resolvePartialId, this returns ALL matches instead of throwing
+ * on ambiguous results. Use this for query/search operations where multiple
+ * matches are valid.
+ * 
+ * @param adapter - HiveAdapter instance
+ * @param projectKey - Project key to filter cells
+ * @param partialId - Full or partial ID to match
+ * @returns Array of matching cells (may be empty)
+ * 
+ * @example
+ * // Find all cells with "mjonid" in their ID
+ * await findCellsByPartialId(adapter, projectKey, "mjonid")
+ * // => [{ id: "...-mjonidi...", ... }, { id: "...-mjonidj...", ... }]
+ */
+export async function findCellsByPartialId(
+  adapter: HiveAdapter,
+  projectKey: string,
+  partialId: string,
+): Promise<Cell[]> {
+  return findCellsByPartialIdDrizzle(adapter, projectKey, partialId);
 }
 
 /**
