@@ -2345,6 +2345,97 @@ Extract from session context:
 `;
 
 /**
+ * Build dynamic swarm state section from snapshot
+ * 
+ * This creates a concrete state summary with actual IDs and status
+ * to prepend to the static compaction context.
+ */
+function buildDynamicStateFromSnapshot(snapshot: SwarmStateSnapshot): string {
+  if (!snapshot.epic) {
+    return "";
+  }
+
+  const parts: string[] = [];
+  
+  // Header with epic info
+  parts.push(`## 🐝 Current Swarm State\n`);
+  parts.push(`**Epic:** ${snapshot.epic.id} - ${snapshot.epic.title}`);
+  parts.push(`**Status:** ${snapshot.epic.status}`);
+  parts.push(`**Project:** ${projectDirectory}\n`);
+  
+  // Subtask breakdown
+  const subtasks = snapshot.epic.subtasks || [];
+  const completed = subtasks.filter(s => s.status === "closed");
+  const inProgress = subtasks.filter(s => s.status === "in_progress");
+  const blocked = subtasks.filter(s => s.status === "blocked");
+  const pending = subtasks.filter(s => s.status === "open");
+  
+  parts.push(`**Progress:** ${completed.length}/${subtasks.length} subtasks complete\n`);
+  
+  // Immediate actions with real IDs
+  parts.push(`## 1️⃣ IMMEDIATE ACTIONS (Do These FIRST)\n`);
+  parts.push(`1. \`swarm_status(epic_id="${snapshot.epic.id}", project_key="${projectDirectory}")\` - Get current state`);
+  parts.push(`2. \`swarmmail_inbox(limit=5)\` - Check for worker messages`);
+  
+  if (inProgress.length > 0) {
+    parts.push(`3. Review in-progress work when workers complete`);
+  }
+  if (pending.length > 0) {
+    const next = pending[0];
+    parts.push(`4. Spawn next subtask: \`swarm_spawn_subtask(bead_id="${next.id}", ...)\``);
+  }
+  if (blocked.length > 0) {
+    parts.push(`5. Unblock: ${blocked.map(s => s.id).join(", ")}`);
+  }
+  parts.push("");
+  
+  // Detailed subtask status
+  if (inProgress.length > 0) {
+    parts.push(`### 🚧 In Progress (${inProgress.length})`);
+    for (const s of inProgress) {
+      const files = s.files?.length ? ` (${s.files.slice(0, 3).join(", ")}${s.files.length > 3 ? "..." : ""})` : "";
+      parts.push(`- ${s.id}: ${s.title}${files}`);
+    }
+    parts.push("");
+  }
+  
+  if (blocked.length > 0) {
+    parts.push(`### 🚫 Blocked (${blocked.length})`);
+    for (const s of blocked) {
+      parts.push(`- ${s.id}: ${s.title}`);
+    }
+    parts.push("");
+  }
+  
+  if (pending.length > 0) {
+    parts.push(`### ⏳ Ready to Spawn (${pending.length})`);
+    for (const s of pending.slice(0, 5)) { // Show first 5
+      const files = s.files?.length ? ` (${s.files.slice(0, 2).join(", ")}${s.files.length > 2 ? "..." : ""})` : "";
+      parts.push(`- ${s.id}: ${s.title}${files}`);
+    }
+    if (pending.length > 5) {
+      parts.push(`- ... and ${pending.length - 5} more`);
+    }
+    parts.push("");
+  }
+  
+  if (completed.length > 0) {
+    parts.push(`### ✅ Completed (${completed.length})`);
+    for (const s of completed.slice(-3)) { // Show last 3
+      parts.push(`- ${s.id}: ${s.title} ✓`);
+    }
+    if (completed.length > 3) {
+      parts.push(`- ... and ${completed.length - 3} more`);
+    }
+    parts.push("");
+  }
+  
+  parts.push("---\n");
+  
+  return parts.join("\n");
+}
+
+/**
  * Fallback detection prompt - tells the compactor what to look for
  * 
  * Used when we can't definitively detect a swarm but want to be safe.
@@ -2610,14 +2701,15 @@ const SwarmPlugin: Plugin = async (
           has_projection: !!sessionScan.projection?.isSwarm,
         });
 
+        // Hoist snapshot outside try block so it's available in fallback path
+        let snapshot: SwarmStateSnapshot | undefined;
+        
         try {
           // =======================================================================
           // PREFER PROJECTION (ground truth from events) OVER HIVE QUERY
           // =======================================================================
           // The projection is derived from session events - it's the source of truth.
           // Hive query may show all cells closed even if swarm was active.
-          
-          let snapshot: SwarmStateSnapshot;
           
           if (sessionScan.projection?.isSwarm) {
             // Use projection as primary source - convert to snapshot format
@@ -2801,9 +2893,12 @@ const SwarmPlugin: Plugin = async (
           });
         }
 
-        // Level 3: Fall back to static context
+        // Level 3: Fall back to static context WITH dynamic state from snapshot
         const header = `[Swarm detected: ${detection.reasons.join(", ")}]\n\n`;
-        const staticContent = header + SWARM_COMPACTION_CONTEXT;
+        
+        // Build dynamic state section if we have snapshot data
+        const dynamicState = snapshot ? buildDynamicStateFromSnapshot(snapshot) : "";
+        const staticContent = header + dynamicState + SWARM_COMPACTION_CONTEXT;
         output.context.push(staticContent);
 
         // =======================================================================
@@ -2811,13 +2906,16 @@ const SwarmPlugin: Plugin = async (
         // =======================================================================
         await captureCompaction(
           input.sessionID,
-          "unknown", // No snapshot available in this path
+          snapshot?.epic?.id || "unknown",
           "context_injected",
           {
             full_content: staticContent,
             content_length: staticContent.length,
             injection_method: "output.context.push",
-            context_type: "static_swarm_context",
+            context_type: "static_with_dynamic_state",
+            has_dynamic_state: !!dynamicState,
+            epic_id: snapshot?.epic?.id,
+            subtask_count: snapshot?.epic?.subtasks?.length ?? 0,
           },
         );
 
@@ -2826,9 +2924,12 @@ const SwarmPlugin: Plugin = async (
           session_id: input.sessionID,
           total_duration_ms: totalDuration,
           confidence: detection.confidence,
-          context_type: "static_swarm_context",
+          context_type: dynamicState ? "static_with_dynamic_state" : "static_swarm_context",
           content_length: staticContent.length,
           context_count_after: output.context.length,
+          has_dynamic_state: !!dynamicState,
+          epic_id: snapshot?.epic?.id,
+          subtask_count: snapshot?.epic?.subtasks?.length ?? 0,
         });
       } else if (detection.confidence === "low") {
         // Level 4: Possible swarm - inject fallback detection prompt
