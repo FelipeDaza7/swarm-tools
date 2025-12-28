@@ -1,5 +1,38 @@
 # Monorepo Guide: Bun + Turborepo
 
+## CRITICAL: Plugin Wrapper Must Be Self-Contained
+
+**The plugin wrapper at `~/.config/opencode/plugin/swarm.ts` must have ZERO imports from `opencode-swarm-plugin`.**
+
+```
+╔═══════════════════════════════════════════════════════════════════════════╗
+║                                                                           ║
+║   ❌ NEVER DO THIS IN THE PLUGIN WRAPPER:                                 ║
+║                                                                           ║
+║   import { anything } from "opencode-swarm-plugin";  // BREAKS OPENCODE   ║
+║   import { stuff } from "swarm-mail";                // BREAKS OPENCODE   ║
+║                                                                           ║
+║   ✅ ONLY THESE IMPORTS ARE SAFE:                                         ║
+║                                                                           ║
+║   import { ... } from "@opencode-ai/plugin";  // Provided by OpenCode     ║
+║   import { ... } from "@opencode-ai/sdk";     // Provided by OpenCode     ║
+║   import { ... } from "node:*";               // Node.js builtins         ║
+║                                                                           ║
+╚═══════════════════════════════════════════════════════════════════════════╝
+```
+
+**Why?** The npm package has transitive dependencies (`evalite`, etc.) that aren't available in OpenCode's plugin context. Importing causes: `Cannot find module 'evalite/runner'` → trace trap → OpenCode crash.
+
+**Pattern: Plugin wrapper is DUMB, CLI is SMART.**
+- **Wrapper:** Thin shell, no logic, just bridges to `swarm` CLI via `spawn()`
+- **CLI:** All the smarts, all the deps, runs in its own Node.js context
+
+**If you need logic in the wrapper:** INLINE IT. Copy the code directly into the template. See the `// Swarm Signature Detection (INLINED)` section for an example of ~250 lines of inlined logic.
+
+**Template location:** `packages/opencode-swarm-plugin/examples/plugin-wrapper-template.ts`
+
+---
+
 ## CRITICAL: No `bd` CLI Commands
 
 **NEVER use `bd` CLI commands in code.** The `bd` CLI is deprecated and should not be called via `Bun.$` or any shell execution.
