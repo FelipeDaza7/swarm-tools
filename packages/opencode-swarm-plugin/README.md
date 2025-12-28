@@ -308,6 +308,74 @@ Auto-saves progress at milestones. Survives context death or crashes. Data store
 | `swarm_review`                 | Generate review prompt for coordinator          |
 | `swarm_review_feedback`        | Send approval/rejection to worker (3-strike)    |
 
+### Semantic Memory (Persistent Learning)
+
+Vector embeddings for persistent agent learnings. Uses **libSQL native vector support via sqlite-vec extension** + **Ollama** for embeddings.
+
+| Tool | Purpose |
+|------|---------|
+| `semantic-memory_store` | Store learnings (with auto-tag/auto-link/entity extraction) |
+| `semantic-memory_find` | Search by semantic similarity |
+| `semantic-memory_get` | Get specific memory by ID |
+| `semantic-memory_validate` | Validate memory accuracy (resets 90-day decay) |
+| `semantic-memory_list` | List stored memories |
+| `semantic-memory_remove` | Delete outdated/incorrect memories |
+
+**Wave 1-3 Smart Operations:**
+
+```typescript
+// Simple store (always adds new)
+semantic-memory_store(information="OAuth tokens need 5min buffer before expiry")
+
+// Store with auto-tagging (LLM extracts tags)
+semantic-memory_store(
+  information="OAuth tokens need 5min buffer",
+  metadata='{"autoTag": true}'
+)
+// Returns: { id: "mem-abc123", autoTags: { tags: ["auth", "oauth", "tokens"], confidence: 0.85 } }
+
+// Store with auto-linking (links to related memories)
+semantic-memory_store(
+  information="Token refresh race condition fixed",
+  metadata='{"autoLink": true}'
+)
+// Returns: { id: "mem-def456", links: [{ memory_id: "mem-abc123", link_type: "related", score: 0.82 }] }
+
+// Store with entity extraction (builds knowledge graph)
+semantic-memory_store(
+  information="Joel prefers TypeScript for Next.js projects",
+  metadata='{"extractEntities": true}'
+)
+// Returns: { id: "mem-ghi789", entities: [{ name: "Joel", type: "person" }, { name: "TypeScript", type: "technology" }] }
+
+// Combine all smart features
+semantic-memory_store(
+  information="OAuth tokens need 5min buffer to avoid race conditions",
+  metadata='{"autoTag": true, "autoLink": true, "extractEntities": true}'
+)
+
+// Search memories
+semantic-memory_find(query="token refresh issues", limit=5)
+
+// Validate memory (resets 90-day decay timer)
+semantic-memory_validate(id="mem-abc123")
+```
+
+**Graceful Degradation:** All smart operations fall back to heuristics if LLM/Ollama unavailable:
+- Auto-tagging returns `undefined` (no tags added)
+- Auto-linking returns `undefined` (no links created)
+- Entity extraction returns empty arrays
+- Vector search falls back to full-text search (FTS5)
+
+**Requires Ollama for smart operations:**
+```bash
+brew install ollama
+ollama serve &
+ollama pull mxbai-embed-large
+```
+
+See [swarm-mail README](../swarm-mail/README.md#wave-1-3-smart-operations) for full API details.
+
 ### Skills (Knowledge Injection)
 
 | Tool            | Purpose                 |
