@@ -49,7 +49,9 @@ import { mandateTools } from "./mandates";
 import { memoryTools } from "./memory-tools";
 import { observabilityTools } from "./observability-tools";
 import { researchTools } from "./swarm-research";
-import { evalTools } from "./eval-runner";
+// NOTE: evalTools removed from main bundle - evalite is a devDependency
+// Use `bunx evalite run` directly for running evals
+// import { evalTools } from "./eval-runner";
 import { contributorTools } from "./contributor-tools";
 import { cassTools } from "./cass-tools";
 import {
@@ -180,7 +182,7 @@ const SwarmPlugin: Plugin = async (
       ...memoryTools,
       ...observabilityTools,
       ...researchTools,
-      ...evalTools,
+      // evalTools removed - evalite is devDependency, use `bunx evalite run` directly
       ...contributorTools,
     },
 
