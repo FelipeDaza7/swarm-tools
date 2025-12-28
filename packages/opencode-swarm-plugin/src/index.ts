@@ -903,11 +903,10 @@ export {
  * - logger - Default logger instance for immediate use
  *
  * Features:
- * - Daily log rotation via pino-roll (numeric format: swarm.1log, swarm.2log, etc.)
- * - 14-day retention
+ * - Default: stdout JSON logging (works everywhere)
+ * - File logging: SWARM_LOG_FILE=1 writes to ~/.config/swarm-tools/logs/
  * - Module-specific child loggers
- * - Pretty mode for development (SWARM_LOG_PRETTY=1)
- * - Logs to ~/.config/swarm-tools/logs/
+ * - For pretty output: pipe to pino-pretty (`swarm ... | npx pino-pretty`)
  *
  * @example
  * ```typescript

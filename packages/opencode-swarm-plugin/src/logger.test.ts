@@ -1,12 +1,12 @@
 import { describe, test, expect, beforeEach, afterEach } from "bun:test";
-import { mkdir, rm, readdir } from "node:fs/promises";
+import { mkdir, rm, readdir, readFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { homedir } from "node:os";
 
 describe("Logger Infrastructure", () => {
   const testLogDir = join(homedir(), ".config", "swarm-tools", "logs-test");
-  let originalEnv: string | undefined;
+  let originalLogFile: string | undefined;
 
   beforeEach(async () => {
     // Clean up test log directory
@@ -14,10 +14,10 @@ describe("Logger Infrastructure", () => {
       await rm(testLogDir, { recursive: true, force: true });
     }
     await mkdir(testLogDir, { recursive: true });
-    originalEnv = process.env.SWARM_LOG_PRETTY;
     
-    // Disable pretty mode to force file output
-    delete process.env.SWARM_LOG_PRETTY;
+    // Save and enable file logging for tests
+    originalLogFile = process.env.SWARM_LOG_FILE;
+    process.env.SWARM_LOG_FILE = "1";
 
     // Clear module cache to reset logger instances
     delete require.cache[require.resolve("./logger")];
@@ -25,10 +25,10 @@ describe("Logger Infrastructure", () => {
 
   afterEach(async () => {
     // Restore environment
-    if (originalEnv !== undefined) {
-      process.env.SWARM_LOG_PRETTY = originalEnv;
+    if (originalLogFile !== undefined) {
+      process.env.SWARM_LOG_FILE = originalLogFile;
     } else {
-      delete process.env.SWARM_LOG_PRETTY;
+      delete process.env.SWARM_LOG_FILE;
     }
 
     // Clean up test directory
@@ -58,21 +58,18 @@ describe("Logger Infrastructure", () => {
       expect(existsSync(newDir)).toBe(true);
     });
 
-    test("creates log file with numeric rotation pattern", async () => {
+    test("creates log file when SWARM_LOG_FILE=1", async () => {
       const { getLogger } = await import("./logger");
       const logger = getLogger(testLogDir);
 
       // Write a log to force file creation
       logger.info("test message");
 
-      // Wait for async file creation (pino-roll is async)
-      await new Promise((resolve) => setTimeout(resolve, 500));
+      // Wait for async file writes (pino.destination is async)
+      await new Promise((resolve) => setTimeout(resolve, 200));
 
       const files = await readdir(testLogDir);
-      // pino-roll format: {filename}.{number}log (e.g., swarm.1log)
-      const logFile = files.find((f) => f.match(/^swarm\.\d+log$/));
-
-      expect(logFile).toBeDefined();
+      expect(files).toContain("swarm.log");
     });
 
     test("writes log entries to file", async () => {
@@ -83,17 +80,19 @@ describe("Logger Infrastructure", () => {
       logger.error("test error entry");
 
       // Wait for async file writes
-      await new Promise((resolve) => setTimeout(resolve, 500));
+      await new Promise((resolve) => setTimeout(resolve, 200));
 
-      const files = await readdir(testLogDir);
-      expect(files.length).toBeGreaterThan(0);
+      const logPath = join(testLogDir, "swarm.log");
+      const content = await readFile(logPath, "utf-8");
+      
+      expect(content).toContain("test log entry");
+      expect(content).toContain("test error entry");
     });
   });
 
   describe("createChildLogger", () => {
     test("creates child logger with module namespace", async () => {
-      const { getLogger, createChildLogger } = await import("./logger");
-      getLogger(testLogDir); // Initialize main logger
+      const { createChildLogger } = await import("./logger");
 
       const childLogger = createChildLogger("compaction", testLogDir);
 
@@ -102,25 +101,20 @@ describe("Logger Infrastructure", () => {
     });
 
     test("child logger writes to module-specific file", async () => {
-      const { getLogger, createChildLogger } = await import("./logger");
-      getLogger(testLogDir);
+      const { createChildLogger } = await import("./logger");
 
       const childLogger = createChildLogger("compaction", testLogDir);
       childLogger.info("compaction test message");
 
       // Wait for async file writes
-      await new Promise((resolve) => setTimeout(resolve, 500));
+      await new Promise((resolve) => setTimeout(resolve, 200));
 
       const files = await readdir(testLogDir);
-      // pino-roll format: {module}.{number}log (e.g., compaction.1log)
-      const compactionLog = files.find((f) => f.match(/^compaction\.\d+log$/));
-
-      expect(compactionLog).toBeDefined();
+      expect(files).toContain("compaction.log");
     });
 
     test("multiple child loggers write to separate files", async () => {
-      const { getLogger, createChildLogger } = await import("./logger");
-      getLogger(testLogDir);
+      const { createChildLogger } = await import("./logger");
 
       const compactionLogger = createChildLogger("compaction", testLogDir);
       const cliLogger = createChildLogger("cli", testLogDir);
@@ -129,38 +123,17 @@ describe("Logger Infrastructure", () => {
       cliLogger.info("cli message");
 
       // Wait for async file writes
-      await new Promise((resolve) => setTimeout(resolve, 500));
+      await new Promise((resolve) => setTimeout(resolve, 200));
 
       const files = await readdir(testLogDir);
-      // pino-roll format: {module}.{number}log
-      const compactionLog = files.find((f) => f.match(/^compaction\.\d+log$/));
-      const cliLog = files.find((f) => f.match(/^cli\.\d+log$/));
-
-      expect(compactionLog).toBeDefined();
-      expect(cliLog).toBeDefined();
+      expect(files).toContain("compaction.log");
+      expect(files).toContain("cli.log");
     });
   });
 
-  describe("Pretty mode", () => {
-    test("respects SWARM_LOG_PRETTY=1 environment variable", async () => {
-      process.env.SWARM_LOG_PRETTY = "1";
-
-      // Force reimport to pick up env var
-      delete require.cache[require.resolve("./logger")];
-      const { getLogger } = await import("./logger");
-
-      const logger = getLogger(testLogDir);
-
-      // If pretty mode is enabled, logger should have prettyPrint config
-      // We can't easily inspect Pino internals, but we can verify it doesn't throw
-      expect(logger).toBeDefined();
-      expect(typeof logger.info).toBe("function");
-
-      logger.info("pretty test message");
-    });
-
-    test("works without pretty mode by default", async () => {
-      delete process.env.SWARM_LOG_PRETTY;
+  describe("stdout mode (default)", () => {
+    test("works without file logging by default", async () => {
+      delete process.env.SWARM_LOG_FILE;
 
       // Force reimport
       delete require.cache[require.resolve("./logger")];
@@ -169,24 +142,27 @@ describe("Logger Infrastructure", () => {
       const logger = getLogger(testLogDir);
 
       expect(logger).toBeDefined();
-      logger.info("normal mode message");
+      // Should not throw when logging to stdout
+      logger.info("stdout mode message");
     });
-  });
 
-  describe("Log rotation", () => {
-    test("sets up daily rotation with 14-day retention", async () => {
+    test("does not create log files when SWARM_LOG_FILE is not set", async () => {
+      delete process.env.SWARM_LOG_FILE;
+
+      // Force reimport
+      delete require.cache[require.resolve("./logger")];
       const { getLogger } = await import("./logger");
+
       const logger = getLogger(testLogDir);
+      logger.info("this goes to stdout");
 
-      // Write logs to trigger rotation setup
-      logger.info("rotation test");
+      // Wait a bit
+      await new Promise((resolve) => setTimeout(resolve, 100));
 
-      // Wait for async file creation
-      await new Promise((resolve) => setTimeout(resolve, 500));
-
-      // Verify log file exists (rotation config is internal to pino-roll)
+      // Log directory should exist (we created it in beforeEach) but no log files
       const files = await readdir(testLogDir);
-      expect(files.length).toBeGreaterThan(0);
+      const logFiles = files.filter(f => f.endsWith(".log"));
+      expect(logFiles).toHaveLength(0);
     });
   });
 });
